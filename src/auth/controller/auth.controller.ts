@@ -35,13 +35,18 @@ authRouter.post('/provider/login', async (req, res) => {
   );
 
   if (selectResult.rows?.length === 0) {
-    return res.json({ message: '아이디가 존재하지 않습니다.' });
+    return res.json({
+      message: '아이디가 존재하지 않습니다.',
+      success: false,
+      code: 'empty',
+    });
   }
 
   if (selectResult.rows?.[0].LOGIN_FAIL_COUNT >= LOGIN_COUNT_LIMIT) {
     return res.json({
       success: false,
       message: '계정이 잠겼습니다.',
+      code: 'locked',
     });
   }
 
@@ -61,20 +66,10 @@ authRouter.post('/provider/login', async (req, res) => {
       { autoCommit: true }
     );
 
-    const selectResult = await connection.execute<any>(
-      'SELECT login_fail_count FROM PROVIDER WHERE id = :0',
-      [id],
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      }
-    );
-
-    const tryCount = selectResult.rows?.[0].LOGIN_FAIL_COUNT;
-
     return res.json({
+      code: 'fail',
       success: false,
       message: '로그인에 실패했습니다.',
-      tryCount,
     });
   }
 
@@ -96,8 +91,15 @@ authRouter.post('/provider/login', async (req, res) => {
     }
   );
 
+  await connection.close();
+
   res.json({
-    accessToken,
+    success: true,
+    message: '토큰이 발급되었습니다',
+    code: 'ok',
+    data: {
+      accessToken,
+    },
   });
 });
 
@@ -167,13 +169,18 @@ authRouter.post('/consumer/login', async (req, res) => {
   );
 
   if (selectResult.rows?.length === 0) {
-    return res.json({ message: '아이디가 존재하지 않습니다.' });
+    return res.json({
+      message: '아이디가 존재하지 않습니다.',
+      success: false,
+      code: 'empty',
+    });
   }
 
   if (selectResult.rows?.[0].LOGIN_FAIL_COUNT >= LOGIN_COUNT_LIMIT) {
     return res.json({
       success: false,
       message: '계정이 잠겼습니다.',
+      code: 'locked',
     });
   }
 
@@ -193,20 +200,10 @@ authRouter.post('/consumer/login', async (req, res) => {
       { autoCommit: true }
     );
 
-    const selectResult = await connection.execute<any>(
-      'SELECT login_fail_count FROM CONSUMER WHERE id = :0',
-      [id],
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      }
-    );
-
-    const tryCount = selectResult.rows?.[0].LOGIN_FAIL_COUNT;
-
     return res.json({
+      code: 'fail',
       success: false,
       message: '로그인에 실패했습니다.',
-      tryCount,
     });
   }
 
@@ -229,7 +226,12 @@ authRouter.post('/consumer/login', async (req, res) => {
   );
 
   res.json({
-    accessToken,
+    success: true,
+    message: '토큰이 발급되었습니다',
+    code: 'ok',
+    data: {
+      accessToken,
+    },
   });
 });
 

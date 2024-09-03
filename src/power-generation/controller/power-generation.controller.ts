@@ -1,7 +1,7 @@
 import express from 'express';
 import { getConnection } from '../../app-data-source';
 import oracledb from 'oracledb';
-import { covertToCamelCase } from '../../utils/convertToCamelCase';
+import { convertToCamelCase } from '../../utils/convertToCamelCase';
 import dayjs from 'dayjs';
 
 export const powerGenerationRouter = express.Router();
@@ -80,6 +80,6 @@ WHERE
 
   res.json({
     success: true,
-    data: covertToCamelCase(formattedResult as any),
+    data: convertToCamelCase(formattedResult as any),
   });
 });

@@ -1,6 +1,6 @@
 import * as changeCase from 'change-case';
 
-export function covertToCamelCase(rows: any[]) {
+export function convertToCamelCase(rows: any[]) {
   return rows?.map((item: any) => {
     const newItem: Record<string, any> = {};
 

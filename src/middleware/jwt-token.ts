@@ -1,13 +1,14 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 
+const JWT_SECRET_KEY = 'jwt-rego';
+
 export const auth = (req: Request, res: Response, next: NextFunction) => {
-  const key = process.env.SECRET_KEY;
   // 인증 완료
   try {
     // 요청 헤더에 저장된 토큰(req.headers.authorization)과 비밀키를 사용하여 토큰을 req.decoded에 반환
     // @ts-ignore
-    req.decoded = jwt.verify(req.headers.authorization, key);
+    req.decoded = jwt.verify(req.headers.authorization, JWT_SECRET_KEY);
     return next();
   } catch (error) {
     if (error instanceof Error) {
