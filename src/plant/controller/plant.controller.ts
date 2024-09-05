@@ -1,16 +1,17 @@
-import express from 'express';
-import oracledb from 'oracledb';
+import express from "express";
+import oracledb from "oracledb";
 
-import { getConnection } from '../../app-data-source';
-import { convertToCamelCase } from '../../utils/convertToCamelCase';
+import { getConnection } from "../../app-data-source";
+import { convertToCamelCase } from "../../utils/convertToCamelCase";
+import { formatNumberToThreeDecimals } from "../../utils/formatNumberToThreeDecimals";
 
 export const plantRouter = express.Router();
 
-plantRouter.get('/', async (req, res) => {
+plantRouter.get("/", async (req, res) => {
   const connection = await getConnection();
 
   const plants = await connection.execute(
-    'SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID',
+    "SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID",
     [],
     {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -25,6 +26,27 @@ plantRouter.get('/', async (req, res) => {
   });
 });
 
+plantRouter.get("/:plantId", async (req, res) => {
+  const { plantId } = req.params;
+
+  const connection = await getConnection();
+
+  const plant = await connection.execute(
+    "SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID WHERE p.PLANT_ID = :0",
+    [plantId],
+    {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    }
+  );
+
+  const camelPlants = convertToCamelCase(plant.rows as any[]);
+
+  res.json({
+    success: true,
+    data: camelPlants[0],
+  });
+});
+
 type PlantUpdateRequestDto = {
   plantId: number;
   selfSupplyPrice: number;
@@ -32,24 +54,23 @@ type PlantUpdateRequestDto = {
   localGovernmentSupplyPrice: number;
 };
 
-plantRouter.put('/', async (req, res) => {
-  const {
-    plantId,
-    selfSupplyPrice,
-    nationSupplyPrice,
-    localGovernmentSupplyPrice,
-  } = req.body as PlantUpdateRequestDto;
+plantRouter.put("/:plantId", async (req, res) => {
+  const { plantId } = req.params;
+  const { selfSupplyPrice, nationSupplyPrice, localGovernmentSupplyPrice } =
+    req.body as PlantUpdateRequestDto;
 
   const total =
     Number(selfSupplyPrice) +
     Number(nationSupplyPrice) +
     Number(localGovernmentSupplyPrice);
 
-  const selfSupplyPricePercent = Math.trunc((selfSupplyPrice / total) * 100);
-  const nationSupplyPricePercent = Math.trunc(
+  const selfSupplyPricePercent = formatNumberToThreeDecimals(
+    (selfSupplyPrice / total) * 100
+  );
+  const nationSupplyPricePercent = formatNumberToThreeDecimals(
     (nationSupplyPrice / total) * 100
   );
-  const localGovernmentSupplyPricePercent = Math.trunc(
+  const localGovernmentSupplyPricePercent = formatNumberToThreeDecimals(
     (localGovernmentSupplyPrice / total) * 100
   );
 
@@ -78,11 +99,11 @@ plantRouter.put('/', async (req, res) => {
 
   res.json({
     success: true,
-    message: '발전소 정보를 저장했습니다.',
+    message: "발전소 정보를 저장했습니다.",
   });
 });
 
-plantRouter.post('/', async (req, res) => {
+plantRouter.post("/", async (req, res) => {
   const connection = await getConnection();
 
   const result = await connection.execute(
@@ -103,7 +124,7 @@ plantRouter.post('/', async (req, res) => {
     .rows?.[0] as any;
 
   await connection.execute(
-    'INSERT INTO REGO_TRADE_INFO_STATISTICS VALUES(:0, :1, :2)',
+    "INSERT INTO REGO_TRADE_INFO_STATISTICS VALUES(:0, :1, :2)",
     [AVG_REC_PRICE, TRADE_COUNT, TOTAL_QUANTITY]
   );
 

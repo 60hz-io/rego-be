@@ -1,19 +1,21 @@
-import express from 'express';
-import schedule from 'node-schedule';
-import oracledb from 'oracledb';
-import cors from 'cors';
+import express from "express";
+import schedule from "node-schedule";
+import oracledb from "oracledb";
+import cors from "cors";
 
-import { consumerRouter } from './src/consumer/controller/consumer.controller';
-import { authRouter } from './src/auth/controller/auth.controller';
-import { powerGenerationRouter } from './src/power-generation/controller/power-generation.controller';
-import { regoRouter } from './src/rego/controller/rego.controller';
-import { regoTradeInfoRouter } from './src/rego-trade-info/controller/rego-trade-info.controller';
-import { plantRouter } from './src/plant/controller/plant.controller';
+import { consumerRouter } from "./src/consumer/controller/consumer.controller";
+import { authRouter } from "./src/auth/controller/auth.controller";
+import { powerGenerationRouter } from "./src/power-generation/controller/power-generation.controller";
+import { regoRouter } from "./src/rego/controller/rego.controller";
+import { regoTradeInfoRouter } from "./src/rego-trade-info/controller/rego-trade-info.controller";
+import { plantRouter } from "./src/plant/controller/plant.controller";
 
-import './src/app-data-source';
-import { getConnection } from './src/app-data-source';
+import { auth } from "./src/middleware/jwt-token";
 
-const API_ENDPOINT_PREFIX = '/api/rego';
+import "./src/app-data-source";
+import { getConnection } from "./src/app-data-source";
+
+const API_ENDPOINT_PREFIX = "/api/rego";
 const PORT = 8080;
 
 const app = express();
@@ -28,16 +30,16 @@ app.listen(PORT, () => {
 
 app.use(`${API_ENDPOINT_PREFIX}/auth`, authRouter);
 app.use(`${API_ENDPOINT_PREFIX}/consumer`, consumerRouter);
-app.use(`${API_ENDPOINT_PREFIX}/power-generation`, powerGenerationRouter);
-app.use(`${API_ENDPOINT_PREFIX}/rego`, regoRouter);
+app.use(`${API_ENDPOINT_PREFIX}/power-generation`, auth, powerGenerationRouter);
+app.use(`${API_ENDPOINT_PREFIX}/rego`, auth, regoRouter);
 app.use(`${API_ENDPOINT_PREFIX}/rego-trade-info`, regoTradeInfoRouter);
 app.use(`${API_ENDPOINT_PREFIX}/plant`, plantRouter);
 
 // REGO 거래 통계를 저장하는 잡
-const job = schedule.scheduleJob('0 * * * *', async () => {
+const job = schedule.scheduleJob("0 * * * *", async () => {
   const connection = await getConnection();
 
-  await connection.execute('TRUNCATE REGO_TRADE_INFO');
+  await connection.execute("TRUNCATE TABLE REGO_TRADE_INFO_STATISTICS");
 
   const result = await connection.execute(
     `SELECT 
@@ -57,11 +59,11 @@ const job = schedule.scheduleJob('0 * * * *', async () => {
     .rows?.[0] as any;
 
   await connection.execute(
-    'INSERT INTO REGO_TRADE_INFO_STATISTICS VALUES(:0, :1, :2)',
-    [AVG_REC_PRICE, TRADE_COUNT, TOTAL_QUANTITY]
+    "INSERT INTO REGO_TRADE_INFO_STATISTICS VALUES(:0, :1, :2, :3)",
+    [AVG_REC_PRICE, TRADE_COUNT, TOTAL_QUANTITY, new Date()]
   );
 
   connection.commit();
 
-  console.log('rego_trade_info_statistics 크론이 실행되었습니다.');
+  console.log("rego_trade_info_statistics 크론이 실행되었습니다.");
 });

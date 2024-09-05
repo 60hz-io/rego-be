@@ -1,19 +1,19 @@
-import express from 'express';
-import oracledb from 'oracledb';
-import util from 'util';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
+import express from "express";
+import oracledb from "oracledb";
+import util from "util";
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
-import { getConnection } from '../../app-data-source';
-import { ProviderSignUpRequestDto } from '../dto/provider-sign-up-request.dto';
-import { ConsumerSignUpRequestDto } from '../dto/consumer-sign-up-request.dto';
+import { getConnection } from "../../app-data-source";
+import { ProviderSignUpRequestDto } from "../dto/provider-sign-up-request.dto";
+import { ConsumerSignUpRequestDto } from "../dto/consumer-sign-up-request.dto";
 
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
 
 export const authRouter = express.Router();
 
-const JWT_SECRET_KEY = 'jwt-rego';
+const JWT_SECRET_KEY = "jwt-rego";
 const LOGIN_COUNT_LIMIT = 5;
 
 type LoginRequestDto = {
@@ -21,13 +21,13 @@ type LoginRequestDto = {
   password: string;
 };
 
-authRouter.post('/provider/login', async (req, res) => {
+authRouter.post("/provider/login", async (req, res) => {
   const { id, password } = req.body as LoginRequestDto;
 
   const connection = await getConnection();
 
   const selectResult = await connection.execute<any>(
-    'SELECT id, password, salt, login_fail_count FROM PROVIDER WHERE id = :0',
+    "SELECT provider_id, id, password, salt, login_fail_count FROM PROVIDER WHERE id = :0",
     [id],
     {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -36,17 +36,17 @@ authRouter.post('/provider/login', async (req, res) => {
 
   if (selectResult.rows?.length === 0) {
     return res.json({
-      message: '아이디가 존재하지 않습니다.',
+      message: "아이디가 존재하지 않습니다.",
       success: false,
-      code: 'empty',
+      code: "empty",
     });
   }
 
   if (selectResult.rows?.[0].LOGIN_FAIL_COUNT >= LOGIN_COUNT_LIMIT) {
     return res.json({
       success: false,
-      message: '계정이 잠겼습니다.',
-      code: 'locked',
+      message: "계정이 잠겼습니다.",
+      code: "locked",
     });
   }
 
@@ -61,33 +61,35 @@ authRouter.post('/provider/login', async (req, res) => {
 
   if (!isVerified) {
     const result = await connection.execute(
-      'UPDATE PROVIDER SET login_fail_count = login_fail_count + 1 WHERE id = :0',
+      "UPDATE PROVIDER SET login_fail_count = login_fail_count + 1 WHERE id = :0",
       [id],
       { autoCommit: true }
     );
 
     return res.json({
-      code: 'fail',
+      code: "fail",
       success: false,
-      message: '로그인에 실패했습니다.',
+      message: "로그인에 실패했습니다.",
     });
   }
 
   await connection.execute(
-    'UPDATE PROVIDER SET login_fail_count = 0 WHERE id = :0',
+    "UPDATE PROVIDER SET login_fail_count = 0 WHERE id = :0",
     [id]
   );
 
   // 토큰 발급
   const accessToken = jwt.sign(
     {
-      type: 'JWT',
+      type: "JWT",
       id,
+      providerId: selectResult.rows?.[0].PROVIDER_ID,
+      accountType: "customer",
     },
     JWT_SECRET_KEY,
     {
-      expiresIn: '60m',
-      issuer: '60hz',
+      expiresIn: "3600m",
+      issuer: "60hz",
     }
   );
 
@@ -95,15 +97,15 @@ authRouter.post('/provider/login', async (req, res) => {
 
   res.json({
     success: true,
-    message: '토큰이 발급되었습니다',
-    code: 'ok',
+    message: "토큰이 발급되었습니다",
+    code: "ok",
     data: {
       accessToken,
     },
   });
 });
 
-authRouter.post('/provider/sign-up', async (req, res) => {
+authRouter.post("/provider/sign-up", async (req, res) => {
   const {
     id,
     password,
@@ -120,7 +122,7 @@ authRouter.post('/provider/sign-up', async (req, res) => {
     const connection = await getConnection();
 
     const selectResult = await connection.execute(
-      'SELECT id FROM PROVIDER WHERE id = :0',
+      "SELECT id FROM PROVIDER WHERE id = :0",
       [id],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -128,7 +130,7 @@ authRouter.post('/provider/sign-up', async (req, res) => {
     );
 
     if (selectResult.rowsAffected === 1) {
-      return res.json({ message: '이미 존재하는 아이디입니다.' });
+      return res.json({ message: "이미 존재하는 아이디입니다." });
     }
 
     await connection.execute(
@@ -155,13 +157,13 @@ authRouter.post('/provider/sign-up', async (req, res) => {
   }
 });
 
-authRouter.post('/consumer/login', async (req, res) => {
+authRouter.post("/consumer/login", async (req, res) => {
   const { id, password } = req.body as LoginRequestDto;
 
   const connection = await getConnection();
 
   const selectResult = await connection.execute<any>(
-    'SELECT id, password, salt, login_fail_count FROM CONSUMER WHERE id = :0',
+    "SELECT consumer_id, id, password, salt, login_fail_count FROM CONSUMER WHERE id = :0",
     [id],
     {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -170,17 +172,17 @@ authRouter.post('/consumer/login', async (req, res) => {
 
   if (selectResult.rows?.length === 0) {
     return res.json({
-      message: '아이디가 존재하지 않습니다.',
+      message: "아이디가 존재하지 않습니다.",
       success: false,
-      code: 'empty',
+      code: "empty",
     });
   }
 
   if (selectResult.rows?.[0].LOGIN_FAIL_COUNT >= LOGIN_COUNT_LIMIT) {
     return res.json({
       success: false,
-      message: '계정이 잠겼습니다.',
-      code: 'locked',
+      message: "계정이 잠겼습니다.",
+      code: "locked",
     });
   }
 
@@ -195,47 +197,49 @@ authRouter.post('/consumer/login', async (req, res) => {
 
   if (!isVerified) {
     const result = await connection.execute(
-      'UPDATE CONSUMER SET login_fail_count = login_fail_count + 1 WHERE id = :0',
+      "UPDATE CONSUMER SET login_fail_count = login_fail_count + 1 WHERE id = :0",
       [id],
       { autoCommit: true }
     );
 
     return res.json({
-      code: 'fail',
+      code: "fail",
       success: false,
-      message: '로그인에 실패했습니다.',
+      message: "로그인에 실패했습니다.",
     });
   }
 
   await connection.execute(
-    'UPDATE CONSUMER SET login_fail_count = 0 WHERE id = :0',
+    "UPDATE CONSUMER SET login_fail_count = 0 WHERE id = :0",
     [id]
   );
 
   // 토큰 발급
   const accessToken = jwt.sign(
     {
-      type: 'JWT',
+      type: "JWT",
       id,
+      providerId: selectResult.rows?.[0].CONSUMER_ID,
+      accountType: "consumer",
     },
     JWT_SECRET_KEY,
     {
-      expiresIn: '60m',
-      issuer: '60hz',
+      expiresIn: "3600m",
+      issuer: "60hz",
     }
   );
 
   res.json({
     success: true,
-    message: '토큰이 발급되었습니다',
-    code: 'ok',
+    message: "토큰이 발급되었습니다",
+    code: "ok",
     data: {
       accessToken,
     },
   });
 });
 
-authRouter.post('/consumer/sign-up', async (req, res) => {
+authRouter.post("/consumer/sign-up", async (req, res) => {
   const {
     id,
     password,
@@ -254,7 +258,7 @@ authRouter.post('/consumer/sign-up', async (req, res) => {
     const connection = await getConnection();
 
     const selectResult = await connection.execute(
-      'SELECT id FROM CONSUMER WHERE id = :0',
+      "SELECT id FROM CONSUMER WHERE id = :0",
       [id],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -295,13 +299,13 @@ authRouter.post('/consumer/sign-up', async (req, res) => {
 const createSalt = async () => {
   const buf = await randomBytesPromise(64);
 
-  return buf.toString('base64');
+  return buf.toString("base64");
 };
 
 export const createHashedPassword = async (password: string) => {
   const salt = await createSalt();
-  const key = await pbkdf2Promise(password, salt, 104906, 64, 'sha512');
-  const hashedPassword = key.toString('base64');
+  const key = await pbkdf2Promise(password, salt, 104906, 64, "sha512");
+  const hashedPassword = key.toString("base64");
 
   return { hashedPassword, salt };
 };
@@ -315,8 +319,8 @@ export const verifyPassword = async ({
   userSalt: string;
   userPassword: string;
 }) => {
-  const key = await pbkdf2Promise(password, userSalt, 104906, 64, 'sha512');
-  const hashedPassword = key.toString('base64');
+  const key = await pbkdf2Promise(password, userSalt, 104906, 64, "sha512");
+  const hashedPassword = key.toString("base64");
 
   if (hashedPassword === userPassword) return true;
   return false;
