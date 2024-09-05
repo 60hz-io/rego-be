@@ -16,7 +16,7 @@ import "./src/app-data-source";
 import { getConnection } from "./src/app-data-source";
 
 const API_ENDPOINT_PREFIX = "/api/rego";
-const PORT = 8080;
+const PORT = 9090;
 
 const app = express();
 app.use(cors());
