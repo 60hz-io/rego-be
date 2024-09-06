@@ -3,12 +3,12 @@ import schedule from "node-schedule";
 import oracledb from "oracledb";
 import cors from "cors";
 
-import { consumerRouter } from "./src/consumer/controller/consumer.controller";
 import { authRouter } from "./src/auth/controller/auth.controller";
 import { powerGenerationRouter } from "./src/power-generation/controller/power-generation.controller";
 import { regoRouter } from "./src/rego/controller/rego.controller";
 import { regoTradeInfoRouter } from "./src/rego-trade-info/controller/rego-trade-info.controller";
 import { plantRouter } from "./src/plant/controller/plant.controller";
+import { buyingRegoRouter } from "./src/buying-rego/controller/buying-rego.controller";
 
 import { auth } from "./src/middleware/jwt-token";
 
@@ -29,11 +29,11 @@ app.listen(PORT, () => {
 });
 
 app.use(`${API_ENDPOINT_PREFIX}/auth`, authRouter);
-app.use(`${API_ENDPOINT_PREFIX}/consumer`, consumerRouter);
 app.use(`${API_ENDPOINT_PREFIX}/power-generation`, auth, powerGenerationRouter);
 app.use(`${API_ENDPOINT_PREFIX}/rego`, auth, regoRouter);
-app.use(`${API_ENDPOINT_PREFIX}/rego-trade-info`, regoTradeInfoRouter);
+app.use(`${API_ENDPOINT_PREFIX}/rego-trade-info`, auth, regoTradeInfoRouter);
 app.use(`${API_ENDPOINT_PREFIX}/plant`, plantRouter);
+app.use(`${API_ENDPOINT_PREFIX}/buying-rego`, buyingRegoRouter);
 
 // REGO 거래 통계를 저장하는 잡
 const job = schedule.scheduleJob("0 * * * *", async () => {

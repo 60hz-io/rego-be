@@ -24,13 +24,13 @@ type RegoIssueRequestDto = {
   }[];
 };
 
-const enum RegoStatus {
+export enum RegoStatus {
   Active = "active",
   Used = "used",
   Expired = "expired",
 }
 
-export const enum RegoTradingStatus {
+export enum RegoTradingStatus {
   Before = "before",
   Trading = "trading",
   End = "end",
@@ -46,18 +46,23 @@ regoRouter.get("/", async (req, res) => {
   // rego 조회
   // 필터링 - 매도계정, 발전소명, 전력생산기간
 
-  const { accountName, plantName, electricityProductionPeriod } =
-    req.query as GetRegoRequestDto;
-
   const connection = await getConnection();
 
-  // 기본 SQL 쿼리문
-  let query = `
+  try {
+    const { accountName, plantName, electricityProductionPeriod } =
+      req.query as GetRegoRequestDto;
+
+    // 기본 SQL 쿼리문
+    let query = `
       SELECT 
         rg.REGO_GROUP_ID as id,
         rg.PROVIDER_ID,
         rg.PLANT_ID,
+        p.ACCOUNT_NAME as SELLER_ACCOUNT_NAME,
         pl.PLANT_NAME,
+        pl.GENERATION_PURPOSE as PLANT_TYPE,
+        pl.LOCATION,
+        pl.INSPECTION_DATE_BEFORE_USAGE,
         pl.GENERATION_PURPOSE,
         pl.ENERGY_SOURCE,
         rg.IDENTIFICATION_NUMBER,
@@ -74,46 +79,58 @@ regoRouter.get("/", async (req, res) => {
       FROM REGO_GROUP rg
       INNER JOIN PROVIDER p ON rg.PROVIDER_ID = p.PROVIDER_ID
       INNER JOIN PLANT pl ON rg.PLANT_ID = pl.PLANT_ID
-      ORDER BY rg.ELECTRICITY_PRODUCTION_PERIOD DESC
+      WHERE 1 = 1
     `;
 
-  // WHERE 절 추가를 위한 조건 배열 및 매개변수 설정
-  const conditions = [];
-  const binds: Record<string, any> = {};
+    // ORDER BY rg.ELECTRICITY_PRODUCTION_PERIOD DESC
+    // WHERE 절 추가를 위한 조건 배열 및 매개변수 설정
+    const conditions = [];
+    const parameters = [];
 
-  // request 쿼리 파라미터를 확인하여 조건을 추가
-  if (accountName) {
-    conditions.push("p.ACCOUNT_NAME = :accountName");
-    binds.account_name = accountName;
+    // request 쿼리 파라미터를 확인하여 조건을 추가
+    if (accountName) {
+      conditions.push("p.ACCOUNT_NAME LIKE :accountName");
+      parameters.push(`%${accountName}%`);
+    }
+
+    if (plantName) {
+      conditions.push("pl.PLANT_NAME LIKE :plantName");
+      parameters.push(`%${plantName}%`);
+    }
+
+    if (electricityProductionPeriod) {
+      conditions.push(
+        "rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod"
+      );
+      parameters.push(`%${electricityProductionPeriod}%`);
+    }
+
+    // 조건이 있을 경우 쿼리에 추가
+    if (conditions.length > 0) {
+      query += " AND " + conditions.join(" AND ");
+    }
+
+    // SQL 쿼리 실행
+    const result = await connection.execute(query, parameters, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+
+    connection.close();
+
+    res.json({
+      data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
+        return b.electricityProductionPeriod - a.electricityProductionPeriod;
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      error,
+    });
+  } finally {
+    connection.close();
   }
-
-  if (plantName) {
-    conditions.push("pl.PLANT_NAME = :plantName");
-    binds.plant_name = plantName;
-  }
-
-  if (electricityProductionPeriod) {
-    conditions.push(
-      "rg.ELECTRICITY_PRODUCTION_PERIOD = :electricity_production_period"
-    );
-    binds.electricity_production_period = electricityProductionPeriod;
-  }
-
-  // 조건이 있을 경우 WHERE 절 추가
-  if (conditions.length > 0) {
-    query += ` WHERE ${conditions.join(" AND ")}`;
-  }
-
-  // SQL 쿼리 실행
-  const result = await connection.execute(query, binds, {
-    outFormat: oracledb.OUT_FORMAT_OBJECT,
-  });
-
-  connection.close();
-
-  res.json({
-    data: convertToCamelCase(result.rows as any[]),
-  });
 });
 
 type RegoPostSellRequestDto = {
@@ -121,43 +138,53 @@ type RegoPostSellRequestDto = {
 };
 
 regoRouter.post("/sell", async (req, res) => {
-  const { regoIds } = req.body as RegoPostSellRequestDto;
-
   const connection = await getConnection();
 
-  for await (const regoId of regoIds) {
-    const regoGroupSelect = await connection.execute(
-      "SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID = :0",
-      [regoId],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
+  try {
+    const { regoIds } = req.body as RegoPostSellRequestDto;
 
-    const rego = convertToCamelCase(regoGroupSelect.rows as any[])[0];
+    for await (const regoId of regoIds) {
+      const regoGroupSelect = await connection.execute(
+        "SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID = :0",
+        [regoId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
 
-    if (
-      rego.status !== RegoStatus.Active ||
-      rego.tradingStatus !== RegoTradingStatus.Before
-    ) {
-      return res.json({
-        success: false,
-        message:
-          "거래가 불가능한 REGO가 포함되어 있습니다.\n다시 한 번 확인해 주세요.",
-      });
+      const rego = convertToCamelCase(regoGroupSelect.rows as any[])[0];
+
+      if (
+        rego.status !== RegoStatus.Active ||
+        rego.tradingStatus !== RegoTradingStatus.Before
+      ) {
+        return res.json({
+          success: false,
+          message:
+            "거래가 불가능한 REGO가 포함되어 있습니다.\n다시 한 번 확인해 주세요.",
+        });
+      }
+
+      await connection.execute(
+        `UPDATE REGO_GROUP SET TRADING_STATUS = 'trading', TRANSACTION_REGISTRATION_DATE = :0 where REGO_GROUP_ID = :1`,
+        [new Date(), regoId]
+      );
     }
 
-    await connection.execute(
-      `UPDATE REGO_GROUP SET TRADING_STATUS = 'trading', TRANSACTION_REGISTRATION_DATE = :0 where REGO_GROUP_ID = :1`,
-      [new Date(), regoId]
-    );
+    connection.commit();
+    connection.close();
+
+    res.json({
+      success: true,
+      message: "REGO 매도 신청을 생성했습니다.",
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      error,
+    });
+  } finally {
+    connection.close();
   }
-
-  connection.commit();
-  connection.close();
-
-  res.json({
-    success: true,
-    message: "REGO 매도 신청을 생성했습니다.",
-  });
 });
 
 regoRouter.post("/issue", async (req, res) => {
@@ -172,6 +199,8 @@ regoRouter.post("/issue", async (req, res) => {
   // 성공했다는 response를 전달한다.
 
   // bulk insert를 위해 output을 2차원 배열로 만든다.
+
+  const connection = await getConnection();
 
   try {
     const regoGroupTableInsertData = issuedRegoList.map(
@@ -215,8 +244,6 @@ regoRouter.post("/issue", async (req, res) => {
       (item) => item[issuedGenerationAmountIndex]
     );
     const flatIssuedGenerationAmounts = issuedGenerationAmounts.flat();
-
-    const connection = await getConnection();
 
     for await (const issueRego of issuedRegoList) {
       await connection.execute(
@@ -277,7 +304,9 @@ regoRouter.post("/issue", async (req, res) => {
     });
   } catch (error) {
     console.log(error);
-    res.json({ success: false });
+    res.json({ success: false, error });
+  } finally {
+    connection.close();
   }
 });
 

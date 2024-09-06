@@ -11,8 +11,8 @@ export const pool = oracledb
     user: process.env.ORACLE_USER,
     password: process.env.ORACLE_PASSWORD,
     connectString: process.env.ORACLE_CONNECT_STRING,
-    poolMin: 5,
-    poolMax: 20,
+    poolMin: 1,
+    poolMax: 10,
     queueTimeout: 60000,
     poolAlias: CONNECTION_POOL_ALIAS,
   })
