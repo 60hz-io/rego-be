@@ -1,18 +1,30 @@
-import express from "express";
-import oracledb from "oracledb";
+import express from 'express';
+import oracledb from 'oracledb';
 
-import { getConnection } from "../../app-data-source";
-import { convertToCamelCase } from "../../utils/convertToCamelCase";
+import { getConnection } from '../../app-data-source';
+import { convertToCamelCase } from '../../utils/convertToCamelCase';
 
 export const buyingRegoRouter = express.Router();
 
-buyingRegoRouter.get("/", async (req, res) => {
+type GetBuyingRegoRequestDto = {
+  buyingRegoIds: number[];
+};
+
+buyingRegoRouter.get('/', async (req, res) => {
+  const { buyingRegoIds } = req.query;
+
+  // TODO: WHERE IN 절로 buyingRegoIds가 있으면 여기 있는 것만 조회하기
+
   const connection = await getConnection();
 
+  let query = '';
+  const bindParams: Record<string, any> = {};
+
   try {
-    const buyingRego = await connection.execute(
-      `
-    SELECT br.*, 
+    if (Array.isArray(buyingRegoIds) && buyingRegoIds.length > 0) {
+      const binds = buyingRegoIds.map((_, index) => `:id${index}`).join(',');
+
+      query = `SELECT br.*, 
             rg.ELECTRICITY_PRODUCTION_PERIOD, 
             p.PLANT_NAME,
             p.GENERATION_PURPOSE,
@@ -23,10 +35,32 @@ buyingRegoRouter.get("/", async (req, res) => {
           FROM BUYING_REGO br
       INNER JOIN REGO_GROUP rg ON br.REGO_GROUP_ID = rg.REGO_GROUP_ID
       INNER JOIN PLANT p ON rg.PLANT_ID = p.PLANT_ID
-    `,
-      [],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
+      WHERE br.BUYING_REGO_ID IN (${binds})
+      ORDER BY br.CREATED_TIME DESC
+      `;
+
+      buyingRegoIds.forEach((id, index) => {
+        bindParams[`id${index}`] = id;
+      });
+    } else {
+      query = `SELECT br.*, 
+            rg.ELECTRICITY_PRODUCTION_PERIOD, 
+            p.PLANT_NAME,
+            p.GENERATION_PURPOSE,
+            p.ENERGY_SOURCE,
+            p.LOCATION,
+            p.INSPECTION_DATE_BEFORE_USAGE,
+            rg.ISSUED_DATE
+          FROM BUYING_REGO br
+      INNER JOIN REGO_GROUP rg ON br.REGO_GROUP_ID = rg.REGO_GROUP_ID
+      INNER JOIN PLANT p ON rg.PLANT_ID = p.PLANT_ID
+      ORDER BY br.CREATED_TIME DESC
+      `;
+    }
+
+    const buyingRego = await connection.execute(query, bindParams, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
 
     const camelBuyingRego = convertToCamelCase(buyingRego.rows as any[]);
 
@@ -41,6 +75,6 @@ buyingRegoRouter.get("/", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });

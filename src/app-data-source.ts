@@ -1,10 +1,10 @@
-import oracledb from "oracledb";
+import oracledb from 'oracledb';
 
 oracledb.initOracleClient({
-  libDir: "./oracle-client",
+  libDir: './oracle-client',
 });
 
-const CONNECTION_POOL_ALIAS = "pool";
+const CONNECTION_POOL_ALIAS = 'pool';
 
 export const pool = oracledb
   .createPool({
@@ -14,11 +14,12 @@ export const pool = oracledb
     poolMin: 1,
     poolMax: 10,
     queueTimeout: 60000,
-    poolAlias: CONNECTION_POOL_ALIAS,
   })
-  .then(() => console.log("database connection is success"))
-  .catch(() => console.log("database connection error"));
+  .then(() => console.log('database connection is success'))
+  .catch(() => console.log('database connection error'));
 
 export const getConnection = async () => {
-  return await oracledb.getConnection(CONNECTION_POOL_ALIAS);
+  const connection = await oracledb.getConnection();
+
+  return connection;
 };

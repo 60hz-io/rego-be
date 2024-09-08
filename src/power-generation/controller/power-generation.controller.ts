@@ -1,17 +1,17 @@
-import express from "express";
-import { getConnection } from "../../app-data-source";
-import oracledb from "oracledb";
-import { convertToCamelCase } from "../../utils/convertToCamelCase";
-import dayjs from "dayjs";
+import express from 'express';
+import { getConnection } from '../../app-data-source';
+import oracledb from 'oracledb';
+import { convertToCamelCase } from '../../utils/convertToCamelCase';
+import dayjs from 'dayjs';
 
 export const powerGenerationRouter = express.Router();
 
 enum YesOrNo {
-  Y = "y",
-  N = "n",
+  Y = 'y',
+  N = 'n',
 }
 
-powerGenerationRouter.get("/", async (req, res) => {
+powerGenerationRouter.get('/', async (req, res) => {
   const connection = await getConnection();
 
   try {
@@ -60,7 +60,7 @@ FROM
       ...row,
       electricityProductionPeriod: dayjs(
         row.electricityProductionPeriod
-      ).format("YYYY-MM"),
+      ).format('YYYY-MM'),
       powerGenerationAmountByResource:
         row.powerGenerationAmount * (row.selfSupplyPriceRate / 100),
       regoIssuedCount: Math.trunc(
@@ -75,7 +75,7 @@ FROM
       issuedStatus: row.issuedStatus,
     }));
 
-    connection.close();
+    await connection.close();
 
     res.json({
       success: true,
@@ -88,6 +88,6 @@ FROM
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });

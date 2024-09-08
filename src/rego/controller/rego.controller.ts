@@ -1,15 +1,15 @@
-import dayjs from "dayjs";
-import express from "express";
-import oracledb from "oracledb";
+import dayjs from 'dayjs';
+import express from 'express';
+import oracledb from 'oracledb';
 
-import { getConnection } from "../../app-data-source";
-import { convertToCamelCase } from "../../utils/convertToCamelCase";
+import { getConnection } from '../../app-data-source';
+import { convertToCamelCase } from '../../utils/convertToCamelCase';
 
 export const regoRouter = express.Router();
 
 const enum Yn {
-  Y = "y",
-  N = "n",
+  Y = 'y',
+  N = 'n',
 }
 
 type RegoIssueRequestDto = {
@@ -25,15 +25,15 @@ type RegoIssueRequestDto = {
 };
 
 export enum RegoStatus {
-  Active = "active",
-  Used = "used",
-  Expired = "expired",
+  Active = 'active',
+  Used = 'used',
+  Expired = 'expired',
 }
 
 export enum RegoTradingStatus {
-  Before = "before",
-  Trading = "trading",
-  End = "end",
+  Before = 'before',
+  Trading = 'trading',
+  End = 'end',
 }
 
 type GetRegoRequestDto = {
@@ -42,7 +42,7 @@ type GetRegoRequestDto = {
   electricityProductionPeriod?: string;
 };
 
-regoRouter.get("/", async (req, res) => {
+regoRouter.get('/', async (req, res) => {
   // rego 조회
   // 필터링 - 매도계정, 발전소명, 전력생산기간
 
@@ -89,25 +89,25 @@ regoRouter.get("/", async (req, res) => {
 
     // request 쿼리 파라미터를 확인하여 조건을 추가
     if (accountName) {
-      conditions.push("p.ACCOUNT_NAME LIKE :accountName");
+      conditions.push('p.ACCOUNT_NAME LIKE :accountName');
       parameters.push(`%${accountName}%`);
     }
 
     if (plantName) {
-      conditions.push("pl.PLANT_NAME LIKE :plantName");
+      conditions.push('pl.PLANT_NAME LIKE :plantName');
       parameters.push(`%${plantName}%`);
     }
 
     if (electricityProductionPeriod) {
       conditions.push(
-        "rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod"
+        'rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod'
       );
       parameters.push(`%${electricityProductionPeriod}%`);
     }
 
     // 조건이 있을 경우 쿼리에 추가
     if (conditions.length > 0) {
-      query += " AND " + conditions.join(" AND ");
+      query += ' AND ' + conditions.join(' AND ');
     }
 
     // SQL 쿼리 실행
@@ -115,7 +115,7 @@ regoRouter.get("/", async (req, res) => {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
     });
 
-    connection.close();
+    await connection.close();
 
     res.json({
       data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
@@ -129,7 +129,7 @@ regoRouter.get("/", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -137,7 +137,7 @@ type RegoPostSellRequestDto = {
   regoIds: number[];
 };
 
-regoRouter.post("/sell", async (req, res) => {
+regoRouter.post('/sell', async (req, res) => {
   const connection = await getConnection();
 
   try {
@@ -145,7 +145,7 @@ regoRouter.post("/sell", async (req, res) => {
 
     for await (const regoId of regoIds) {
       const regoGroupSelect = await connection.execute(
-        "SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID = :0",
+        'SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID = :0',
         [regoId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
@@ -159,7 +159,7 @@ regoRouter.post("/sell", async (req, res) => {
         return res.json({
           success: false,
           message:
-            "거래가 불가능한 REGO가 포함되어 있습니다.\n다시 한 번 확인해 주세요.",
+            '거래가 불가능한 REGO가 포함되어 있습니다.\n다시 한 번 확인해 주세요.',
         });
       }
 
@@ -170,11 +170,11 @@ regoRouter.post("/sell", async (req, res) => {
     }
 
     connection.commit();
-    connection.close();
+    await connection.close();
 
     res.json({
       success: true,
-      message: "REGO 매도 신청을 생성했습니다.",
+      message: 'REGO 매도 신청을 생성했습니다.',
     });
   } catch (error) {
     console.error(error);
@@ -183,11 +183,11 @@ regoRouter.post("/sell", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
-regoRouter.post("/issue", async (req, res) => {
+regoRouter.post('/issue', async (req, res) => {
   const { issuedRegoList } = req.body as RegoIssueRequestDto;
   // @ts-ignore
   const { decoded } = req;
@@ -215,12 +215,12 @@ regoRouter.post("/issue", async (req, res) => {
         const status = RegoStatus.Active;
         const tradingStatus = RegoTradingStatus.Before;
         const issuedDate = dayjs().toDate();
-        const expiredDate = dayjs().add(3, "year").toDate();
+        const expiredDate = dayjs().add(3, 'year').toDate();
 
         if (issuedStatus === Yn.Y) {
           return res.json({
             success: false,
-            message: "이미 해당 발전량에 대해 REGO가 발급되었습니다.",
+            message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
           });
         }
 
@@ -263,7 +263,7 @@ regoRouter.post("/issue", async (req, res) => {
     );
 
     const selectIds = await connection.execute(
-      "SELECT MAX(REGO_GROUP_ID) AS last_id FROM REGO_GROUP",
+      'SELECT MAX(REGO_GROUP_ID) AS last_id FROM REGO_GROUP',
       [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -284,7 +284,7 @@ regoRouter.post("/issue", async (req, res) => {
       ]);
 
       await connection.executeMany(
-        "INSERT INTO REGO(REGO_GROUP_ID, IDENTIFICATION_NUMBER, REGO_IDENTIFICATION_NUMBER) VALUES(:0, :1, :2)",
+        'INSERT INTO REGO(REGO_GROUP_ID, IDENTIFICATION_NUMBER, REGO_IDENTIFICATION_NUMBER) VALUES(:0, :1, :2)',
         insertData
       );
     }
@@ -306,14 +306,14 @@ regoRouter.post("/issue", async (req, res) => {
     console.log(error);
     res.json({ success: false, error });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
 function generateUniqueId(length = 8) {
-  const RANDOM_CHAR = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const RANDOM_CHAR = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-  let result = "";
+  let result = '';
 
   for (let i = 0; i < length; i += 1) {
     const randomIndex = Math.floor(Math.random() * RANDOM_CHAR.length);

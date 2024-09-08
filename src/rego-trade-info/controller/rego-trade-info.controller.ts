@@ -1,20 +1,20 @@
-import express from "express";
-import oracledb from "oracledb";
+import express from 'express';
+import oracledb from 'oracledb';
 
-import { getConnection } from "../../app-data-source";
-import { convertToCamelCase } from "../../utils/convertToCamelCase";
+import { getConnection } from '../../app-data-source';
+import { convertToCamelCase } from '../../utils/convertToCamelCase';
 import {
   RegoStatus,
   RegoTradingStatus,
-} from "../../rego/controller/rego.controller";
+} from '../../rego/controller/rego.controller';
 
 export const regoTradeInfoRouter = express.Router();
 
 const enum TradingApplicationStatus {
-  Pending = "pending",
-  Approve = "approve",
-  Rejected = "rejected",
-  Canceled = "canceled",
+  Pending = 'pending',
+  Approve = 'approve',
+  Rejected = 'rejected',
+  Canceled = 'canceled',
 }
 
 type GetRegoTradeInfoRequestDto = {
@@ -24,7 +24,7 @@ type GetRegoTradeInfoRequestDto = {
   tradingApplicationStatus: TradingApplicationStatus;
 };
 
-regoTradeInfoRouter.get("/", async (req, res) => {
+regoTradeInfoRouter.get('/', async (req, res) => {
   const {
     buyingApplicationAccountName,
     identificationNumber,
@@ -71,32 +71,32 @@ regoTradeInfoRouter.get("/", async (req, res) => {
 
     // 각 필터 조건 추가
     if (buyingApplicationAccountName) {
-      conditions.push("c.CORPORATION_NAME LIKE :buyingApplicationAccountName");
+      conditions.push('c.CORPORATION_NAME LIKE :buyingApplicationAccountName');
       parameters.push(`%${buyingApplicationAccountName}%`);
     }
 
     if (identificationNumber) {
-      conditions.push("rti.IDENTIFICATION_NUMBER LIKE :identificationNumber");
+      conditions.push('rti.IDENTIFICATION_NUMBER LIKE :identificationNumber');
       parameters.push(`%${identificationNumber}%`);
     }
 
     if (electricityProductionPeriod) {
       conditions.push(
-        "rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod"
+        'rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod'
       );
       parameters.push(`%${electricityProductionPeriod}%`);
     }
 
     if (tradingApplicationStatus) {
       conditions.push(
-        "rti.TRADING_APPLICATION_STATUS = :tradingApplicationStatus"
+        'rti.TRADING_APPLICATION_STATUS = :tradingApplicationStatus'
       );
       parameters.push(tradingApplicationStatus);
     }
 
     // 조건이 있을 경우 쿼리에 추가
     if (conditions.length > 0) {
-      query += " AND " + conditions.join(" AND ");
+      query += ' AND ' + conditions.join(' AND ');
     }
 
     // query += " ORDER BY rti.BUYING_APPLICATION_DATE DESC;";
@@ -126,11 +126,11 @@ regoTradeInfoRouter.get("/", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
-regoTradeInfoRouter.get("/statistics", async (req, res) => {
+regoTradeInfoRouter.get('/statistics', async (req, res) => {
   const connection = await getConnection();
 
   try {
@@ -155,7 +155,7 @@ regoTradeInfoRouter.get("/statistics", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -164,14 +164,14 @@ type PostRegoTradeInfoRefuseRequestDto = {
   rejectedReason: string;
 };
 
-regoTradeInfoRouter.post("/refuse", async (req, res) => {
+regoTradeInfoRouter.post('/refuse', async (req, res) => {
   const { regoTradeInfoId, rejectedReason } =
     req.body as PostRegoTradeInfoRefuseRequestDto;
 
   const connection = await getConnection();
 
   const regoTradeInfo = await connection.execute(
-    "SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0",
+    'SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
     [regoTradeInfoId],
     {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -186,7 +186,7 @@ regoTradeInfoRouter.post("/refuse", async (req, res) => {
   ) {
     return res.json({
       success: false,
-      message: "이미 처리가 완료된 거래입니다.",
+      message: '이미 처리가 완료된 거래입니다.',
     });
   }
 
@@ -203,7 +203,7 @@ regoTradeInfoRouter.post("/refuse", async (req, res) => {
 
   res.json({
     success: true,
-    message: "REGO 거래 거절을 완료했습니다.",
+    message: 'REGO 거래 거절을 완료했습니다.',
   });
 });
 
@@ -211,7 +211,7 @@ type PostRegoTradeInfoAcceptRequestDto = {
   regoTradeInfoId: number;
 };
 
-regoTradeInfoRouter.post("/accept", async (req, res) => {
+regoTradeInfoRouter.post('/accept', async (req, res) => {
   const { regoTradeInfoId } = req.body as PostRegoTradeInfoAcceptRequestDto;
 
   const connection = await getConnection();
@@ -226,7 +226,7 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
 
     // REGO_GROUP 거래 상태, 잔여량 변경
     const regoTradeInfo = await connection.execute(
-      "SELECT REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0",
+      'SELECT REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
       [regoTradeInfoId],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -239,7 +239,7 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
     )[0];
 
     const regoGroup = await connection.execute(
-      "SELECT ISSUED_GENERATION_AMOUNT, IDENTIFICATION_NUMBER, REMAINING_GENERATION_AMOUNT FROM REGO_GROUP WHERE REGO_GROUP_ID = :0",
+      'SELECT ISSUED_GENERATION_AMOUNT, IDENTIFICATION_NUMBER, REMAINING_GENERATION_AMOUNT FROM REGO_GROUP WHERE REGO_GROUP_ID = :0',
       [camelRegoTradeInfo.regoGroupId],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -257,7 +257,7 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
         : RegoTradingStatus.Trading;
 
     await connection.execute(
-      "UPDATE REGO_GROUP SET REMAINING_GENERATION_AMOUNT = :0, TRADING_STATUS = :1 WHERE REGO_GROUP_ID = :2",
+      'UPDATE REGO_GROUP SET REMAINING_GENERATION_AMOUNT = :0, TRADING_STATUS = :1 WHERE REGO_GROUP_ID = :2',
       [
         remainingGenerationAmount,
         tradingStatus,
@@ -279,16 +279,17 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
 
     await connection.execute(
       `
-      INSERT INTO BUYING_REGO(REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT, IDENTIFICATION_NUMBER) 
-      VALUES(:0, :1, :2, :3)
+      INSERT INTO BUYING_REGO(REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT, IDENTIFICATION_NUMBER, 
+                              IDENTIFICATION_START_NUMBER, IDENTIFICATION_END_NUMBER) 
+      VALUES(:0, :1, :2, :3, :4, :5)
     `,
       [
         camelRegoTradeInfo.regoGroupId,
         camelRegoTradeInfo.consumerId,
         camelRegoTradeInfo.buyingAmount,
-        `${camelRegoGroup.identificationNumber} ${startNumber} - ${
-          startNumber + camelRegoTradeInfo.buyingAmount
-        }`,
+        camelRegoGroup.identificationNumber,
+        startNumber,
+        startNumber + camelRegoTradeInfo.buyingAmount,
       ],
       { autoCommit: true }
     );
@@ -314,7 +315,7 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
 
     res.json({
       success: true,
-      message: "REGO를 거래 완료했습니다.",
+      message: 'REGO를 거래 완료했습니다.',
     });
   } catch (error) {
     console.error(error);
@@ -323,7 +324,7 @@ regoTradeInfoRouter.post("/accept", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -334,7 +335,7 @@ type PostRegoTradeInfoBuyingRequestDto = {
   buyingPrice: number;
 };
 
-regoTradeInfoRouter.post("/buying", async (req, res) => {
+regoTradeInfoRouter.post('/buying', async (req, res) => {
   const { regoGroupId, identificationNumber, buyingAmount, buyingPrice } =
     req.body as PostRegoTradeInfoBuyingRequestDto;
   //@ts-ignore
@@ -344,7 +345,7 @@ regoTradeInfoRouter.post("/buying", async (req, res) => {
 
   try {
     const regoGroup = await connection.execute(
-      "SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID= :0",
+      'SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID= :0',
       [regoGroupId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -357,7 +358,7 @@ regoTradeInfoRouter.post("/buying", async (req, res) => {
     ) {
       return res.json({
         success: false,
-        message: "해당 REGO는 현재 매수가 불가능한 상태입니다.",
+        message: '해당 REGO는 현재 매수가 불가능한 상태입니다.',
       });
     }
 
@@ -372,7 +373,7 @@ regoTradeInfoRouter.post("/buying", async (req, res) => {
         camelRegoGroup.plantId,
         regoGroupId,
         identificationNumber,
-        "pending",
+        'pending',
         buyingAmount,
         buyingPrice,
         new Date(),
@@ -382,7 +383,7 @@ regoTradeInfoRouter.post("/buying", async (req, res) => {
 
     res.json({
       success: true,
-      message: "rego 매수 신청이 완료되었습니다.",
+      message: 'rego 매수 신청이 완료되었습니다.',
     });
   } catch (error) {
     console.error(error);
@@ -391,7 +392,7 @@ regoTradeInfoRouter.post("/buying", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -399,14 +400,14 @@ type PutRegoTradeInfoCancelRequestDto = {
   regoTradeInfoId: number;
 };
 
-regoTradeInfoRouter.put("/cancel", async (req, res) => {
+regoTradeInfoRouter.put('/cancel', async (req, res) => {
   const { regoTradeInfoId } = req.body as PutRegoTradeInfoCancelRequestDto;
 
   const connection = await getConnection();
 
   try {
     const regoTradeInfo = await connection.execute(
-      "SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0",
+      'SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
       [regoTradeInfoId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -422,7 +423,7 @@ regoTradeInfoRouter.put("/cancel", async (req, res) => {
       return res.json({
         success: false,
         message:
-          "거래 대상이 신청에 대해 승인 또는 거절을 완료해 매수 신청 취소가 불가능합니다.",
+          '거래 대상이 신청에 대해 승인 또는 거절을 완료해 매수 신청 취소가 불가능합니다.',
       });
     }
 
@@ -443,6 +444,6 @@ regoTradeInfoRouter.put("/cancel", async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
