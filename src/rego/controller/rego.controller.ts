@@ -16,7 +16,6 @@ const enum Yn {
 type RegoIssueRequestDto = {
   issuedRegoList: {
     id: number;
-    providerId: number;
     plantId: number;
     electricityProductionPeriod: string;
     issuedGenerationAmount: number;
@@ -120,14 +119,7 @@ regoRouter.get('/', async (req, res) => {
     res.json({
       success: true,
       data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
-        const prevPeriod = Number(
-          a.electricityProductionPeriod.split('-').join('')
-        );
-        const nextPeriod = Number(
-          b.electricityProductionPeriod.split('-').join('')
-        );
-
-        return nextPeriod - prevPeriod;
+        return b.issuedDate - a.issuedDate;
       }),
     });
   } catch (error) {
@@ -259,8 +251,6 @@ regoRouter.post('/issue', async (req, res) => {
 
         let issuedGenerationAmountWithRest = 0;
 
-        console.log('restIssuedGenerationAmount =', restIssuedGenerationAmount);
-
         if (index === issuedRegoList.length - 1) {
           restIssuedGenerationAmount += camelProvider.carriedOverPowerGenAmount;
 
@@ -287,8 +277,6 @@ regoRouter.post('/issue', async (req, res) => {
             integerIssuedGenerationAmount
           );
         }
-
-        console.log(issuedGenerationAmountWithRest);
 
         return [
           decoded?.providerId,
