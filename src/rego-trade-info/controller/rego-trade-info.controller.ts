@@ -108,11 +108,18 @@ regoTradeInfoRouter.get('/', async (req, res) => {
     res.json({
       success: true,
       data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
-        if (tradingApplicationStatus !== TradingApplicationStatus.Approve) {
+        if (
+          tradingApplicationStatus === TradingApplicationStatus.Pending ||
+          tradingApplicationStatus === TradingApplicationStatus.Rejected
+        ) {
           return b.buyingApplicationDate - a.buyingApplicationDate;
         }
 
         if (tradingApplicationStatus === TradingApplicationStatus.Approve) {
+          return b.tradeCompletedDate - a.tradeCompletedDate;
+        }
+
+        if (tradingApplicationStatus === TradingApplicationStatus.Canceled) {
           return b.tradeCompletedDate - a.tradeCompletedDate;
         }
 
@@ -127,6 +134,58 @@ regoTradeInfoRouter.get('/', async (req, res) => {
     });
   } finally {
     await connection.close();
+  }
+});
+
+regoTradeInfoRouter.get('/electricity-production-period', async (req, res) => {
+  // @ts-ignore
+  const { decoded } = req;
+
+  const providerId = decoded?.providerId;
+  const consumerId = decoded?.consumerId;
+
+  const connection = await getConnection();
+  let result: any;
+
+  try {
+    if (providerId) {
+      result = await connection.execute(
+        `
+        SELECT rg.ELECTRICITY_PRODUCTION_PERIOD FROM REGO_TRADE_INFO rti  
+                                              INNER JOIN REGO_GROUP rg ON rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
+                                              WHERE rti.PROVIDER_ID = :0 AND rti.TRADING_APPLICATION_STATUS = :1
+      `,
+        [providerId, TradingApplicationStatus.Pending],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+    }
+
+    if (consumerId) {
+      result = await connection.execute(
+        `
+        SELECT rg.ELECTRICITY_PRODUCTION_PERIOD FROM REGO_TRADE_INFO rti  
+                                              INNER JOIN REGO_GROUP rg ON rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
+                                              WHERE rti.CONSUMER_ID = :0 AND rti.TRADING_APPLICATION_STATUS = :1
+      `,
+        [consumerId, TradingApplicationStatus.Pending],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+    }
+
+    const camelResult = convertToCamelCase(result?.rows as any[]);
+
+    res.json({
+      success: true,
+      data: camelResult,
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      error,
+    });
+  } finally {
+    connection.close();
   }
 });
 
