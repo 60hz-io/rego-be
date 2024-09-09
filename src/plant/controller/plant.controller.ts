@@ -9,11 +9,18 @@ export const plantRouter = express.Router();
 
 plantRouter.get('/', async (req, res) => {
   const connection = await getConnection();
+  //@ts-ignore
+  const { providerId } = req.decoded;
+
+  console.log(providerId);
 
   try {
     const plants = await connection.execute(
-      'SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID',
-      [],
+      `SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE 
+         FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID
+         WHERE p.PROVIDER_ID = :0
+         `,
+      [providerId],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       }

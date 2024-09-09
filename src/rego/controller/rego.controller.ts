@@ -214,6 +214,16 @@ regoRouter.post('/issue', async (req, res) => {
     let restIssuedGenerationAmount = 0;
     let 이월_잔여량 = 0;
 
+    const provider = await connection.execute(
+      `
+        SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE PROVIDER_ID = :0
+      `,
+      [decoded?.providerId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const camelProvider = convertToCamelCase(provider?.rows as any[])[0];
+
     const regoGroupTableInsertData = issuedRegoList.map(
       (
         {
@@ -249,7 +259,11 @@ regoRouter.post('/issue', async (req, res) => {
 
         let issuedGenerationAmountWithRest = 0;
 
+        console.log('restIssuedGenerationAmount =', restIssuedGenerationAmount);
+
         if (index === issuedRegoList.length - 1) {
+          restIssuedGenerationAmount += camelProvider.carriedOverPowerGenAmount;
+
           if (
             Math.trunc(
               Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
@@ -261,7 +275,7 @@ regoRouter.post('/issue', async (req, res) => {
             const [, decimal] = String(
               Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
             ).split('.');
-            이월_잔여량 = Number(decimal);
+            이월_잔여량 = Number(convertToDecimal(Number(decimal)));
           } else {
             issuedGenerationAmountWithRest = Number(
               integerIssuedGenerationAmount
@@ -274,6 +288,8 @@ regoRouter.post('/issue', async (req, res) => {
           );
         }
 
+        console.log(issuedGenerationAmountWithRest);
+
         return [
           decoded?.providerId,
           plantId,
@@ -282,7 +298,7 @@ regoRouter.post('/issue', async (req, res) => {
           tradingStatus,
           electricityProductionPeriod,
           issuedGenerationAmountWithRest,
-          remainingGenerationAmount,
+          issuedGenerationAmountWithRest,
           issuedDate,
           expiredDate,
         ];

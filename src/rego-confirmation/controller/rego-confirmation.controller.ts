@@ -127,10 +127,15 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
       if (buyingRego.buyingAmount - regoUsageAmount > 0) {
         await connection.execute(
           `
-            UPDATE BUYING_REGO SET BUYING_AMOUNT = :0
-             WHERE BUYING_REGO_ID = :1
+            UPDATE BUYING_REGO SET BUYING_AMOUNT = :0,
+                                   IDENTIFICATION_START_NUMBER = :1
+             WHERE BUYING_REGO_ID = :2
           `,
-          [buyingRego.buyingAmount - regoUsageAmount, buyingRegoId]
+          [
+            buyingRego.buyingAmount - regoUsageAmount,
+            buyingRego.identificationStartNumber + regoUsageAmount,
+            buyingRegoId,
+          ]
         );
         const result = await connection.execute(
           `
@@ -149,7 +154,8 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
             identificationNumber: buyingRego.identificationNumber,
             regoStatus: RegoStatus.Used,
             identificationStartNumber: buyingRego.identificationStartNumber,
-            identificationEndNumber: buyingRego.identificationEndNumber,
+            identificationEndNumber:
+              buyingRego.identificationStartNumber + regoUsageAmount - 1,
             id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
           },
           { autoCommit: false }

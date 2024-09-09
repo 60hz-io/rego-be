@@ -16,7 +16,8 @@ providerRouter.get('/', async (req, res) => {
     const provider = await connection.execute(
       `
         SELECT 
-         CARRIED_OVER_POWER_GEN_AMOUNT
+         CARRIED_OVER_POWER_GEN_AMOUNT,
+         IS_FIRST_LOGIN
          FROM PROVIDER WHERE PROVIDER_ID = :0
       `,
       [providerId],

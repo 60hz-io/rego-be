@@ -28,7 +28,7 @@ authRouter.post('/provider/login', async (req, res) => {
     const { id, password } = req.body as LoginRequestDto;
 
     const selectResult = await connection.execute<any>(
-      'SELECT provider_id, id, password, salt, login_fail_count FROM PROVIDER WHERE id = :0',
+      'SELECT provider_id, id, password, salt, login_fail_count, is_first_login FROM PROVIDER WHERE id = :0',
       [id],
       {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -94,12 +94,23 @@ authRouter.post('/provider/login', async (req, res) => {
       }
     );
 
+    await connection.execute(
+      `UPDATE PROVIDER SET is_first_login = 'n' WHERE id = :0`,
+      [id],
+      {
+        autoCommit: true,
+      }
+    );
+
     res.json({
       success: true,
       message: '토큰이 발급되었습니다',
       code: 'ok',
       data: {
         accessToken,
+        ...(selectResult.rows?.[0].IS_FIRST_LOGIN === 'y' && {
+          isFirstLogin: true,
+        }),
       },
     });
   } catch (error) {
