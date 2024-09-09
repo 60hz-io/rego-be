@@ -4,6 +4,7 @@ import oracledb from 'oracledb';
 
 import { getConnection } from '../../app-data-source';
 import { convertToCamelCase } from '../../utils/convertToCamelCase';
+import { formatNumberToThreeDecimals } from '../../utils/formatNumberToThreeDecimals';
 
 export const regoRouter = express.Router();
 
@@ -211,6 +212,7 @@ regoRouter.post('/issue', async (req, res) => {
 
   try {
     let restIssuedGenerationAmount = 0;
+    let 이월_잔여량 = 0;
 
     const regoGroupTableInsertData = issuedRegoList.map(
       (
@@ -232,13 +234,44 @@ regoRouter.post('/issue', async (req, res) => {
         const [integerIssuedGenerationAmount, decimalIssuedGenerationAmount] =
           String(issuedGenerationAmount).split('.');
 
-        restIssuedGenerationAmount += Number(decimalIssuedGenerationAmount);
+        restIssuedGenerationAmount += Number(
+          formatNumberToThreeDecimals(
+            convertToDecimal(Number(decimalIssuedGenerationAmount))
+          )
+        );
 
         if (issuedStatus === Yn.Y) {
           return res.json({
             success: false,
             message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
           });
+        }
+
+        let issuedGenerationAmountWithRest = 0;
+
+        if (index === issuedRegoList.length - 1) {
+          if (
+            Math.trunc(
+              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
+            ) > Math.trunc(Number(integerIssuedGenerationAmount))
+          ) {
+            issuedGenerationAmountWithRest = Math.trunc(
+              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
+            );
+            const [, decimal] = String(
+              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
+            ).split('.');
+            이월_잔여량 = Number(decimal);
+          } else {
+            issuedGenerationAmountWithRest = Number(
+              integerIssuedGenerationAmount
+            );
+            이월_잔여량 = restIssuedGenerationAmount;
+          }
+        } else {
+          issuedGenerationAmountWithRest = Number(
+            integerIssuedGenerationAmount
+          );
         }
 
         return [
@@ -248,10 +281,7 @@ regoRouter.post('/issue', async (req, res) => {
           status,
           tradingStatus,
           electricityProductionPeriod,
-          index === issuedRegoList.length - 1
-            ? integerIssuedGenerationAmount +
-              Math.trunc(restIssuedGenerationAmount)
-            : integerIssuedGenerationAmount,
+          issuedGenerationAmountWithRest,
           remainingGenerationAmount,
           issuedDate,
           expiredDate,
@@ -259,16 +289,15 @@ regoRouter.post('/issue', async (req, res) => {
       }
     ) as any[][];
 
-    const [, decimalRestIssuedGenerationAmount] = String(
-      restIssuedGenerationAmount
-    ).split('.');
+    console.log('restIssuedGenerationAmount', restIssuedGenerationAmount);
+    console.log('이월_잔여량', 이월_잔여량);
 
-    if (Number(decimalRestIssuedGenerationAmount) > 0) {
+    if (Number(이월_잔여량) > 0) {
       await connection.execute(
         `
-          UPDATE CONSUMER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE CONSUMER_ID = : 1
+          UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
         `,
-        [decimalRestIssuedGenerationAmount, decoded?.consumerId],
+        [이월_잔여량, decoded?.providerId],
         { autoCommit: true }
       );
     }
@@ -355,4 +384,8 @@ function generateUniqueId(length = 8) {
   }
 
   return result;
+}
+
+function convertToDecimal(value: number) {
+  return Number(`0.${value}`);
 }

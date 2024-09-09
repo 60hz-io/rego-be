@@ -16,6 +16,7 @@ import './src/app-data-source';
 import { getConnection } from './src/app-data-source';
 import { regoConfirmationRouter } from './src/rego-confirmation/controller/rego-confirmation.controller';
 import { consumerRouter } from './src/consumer/consumer.controller';
+import { providerRouter } from './src/provider/provider.controller';
 
 function init() {
   try {
@@ -52,6 +53,7 @@ function init() {
       regoConfirmationRouter
     );
     app.use(`${API_ENDPOINT_PREFIX}/consumer`, auth, consumerRouter);
+    app.use(`${API_ENDPOINT_PREFIX}/provider`, auth, providerRouter);
 
     // REGO 거래 통계를 저장하는 잡
     const job = schedule.scheduleJob('0 * * * *', async () => {
