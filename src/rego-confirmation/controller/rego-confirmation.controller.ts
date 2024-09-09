@@ -147,7 +147,7 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
             consumerId: buyingRego.consumerId,
             regoUsageAmount: regoUsageAmount,
             identificationNumber: buyingRego.identificationNumber,
-            regoStatus: RegoStatus.Active,
+            regoStatus: RegoStatus.Used,
             identificationStartNumber: buyingRego.identificationStartNumber,
             identificationEndNumber: buyingRego.identificationEndNumber,
             id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
