@@ -46,9 +46,10 @@ regoRouter.get('/', async (req, res) => {
   // rego 조회
   // 필터링 - 매도계정, 발전소명, 전력생산기간
 
-  const connection = await getConnection();
+  let connection;
 
   try {
+    connection = await getConnection();
     const { accountName, plantName, electricityProductionPeriod } =
       req.query as GetRegoRequestDto;
 
@@ -115,8 +116,6 @@ regoRouter.get('/', async (req, res) => {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
     });
 
-    await connection.close();
-
     res.json({
       data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
         return b.electricityProductionPeriod - a.electricityProductionPeriod;
@@ -129,7 +128,7 @@ regoRouter.get('/', async (req, res) => {
       error,
     });
   } finally {
-    await connection.close();
+    connection?.close();
   }
 });
 

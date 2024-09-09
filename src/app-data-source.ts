@@ -13,7 +13,6 @@ export const pool = oracledb
     connectString: process.env.ORACLE_CONNECT_STRING,
     poolMin: 1,
     poolMax: 10,
-    queueTimeout: 60000,
   })
   .then(() => console.log('database connection is success'))
   .catch(() => console.log('database connection error'));

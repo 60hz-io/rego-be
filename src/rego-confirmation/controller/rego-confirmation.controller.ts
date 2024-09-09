@@ -42,6 +42,8 @@ regoConfirmationRouter.get('/', async (req, res) => {
       success: false,
       error,
     });
+  } finally {
+    connection.close();
   }
 });
 
