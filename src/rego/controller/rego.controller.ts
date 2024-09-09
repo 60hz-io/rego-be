@@ -111,16 +111,22 @@ regoRouter.get('/', async (req, res) => {
       query += ' AND ' + conditions.join(' AND ');
     }
 
-    query += 'ORDER BY rg.ELECTRICITY_PRODUCTION_PERIOD DESC';
-
     // SQL 쿼리 실행
     const result = await connection.execute(query, parameters, {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
     });
 
     res.json({
+      success: true,
       data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
-        return b.electricityProductionPeriod - a.electricityProductionPeriod;
+        const prevPeriod = Number(
+          a.electricityProductionPeriod.split('-').join('')
+        );
+        const nextPeriod = Number(
+          b.electricityProductionPeriod.split('-').join('')
+        );
+
+        return nextPeriod - prevPeriod;
       }),
     });
   } catch (error) {
