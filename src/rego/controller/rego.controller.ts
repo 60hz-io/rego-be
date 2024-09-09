@@ -210,19 +210,29 @@ regoRouter.post('/issue', async (req, res) => {
   const connection = await getConnection();
 
   try {
+    let restIssuedGenerationAmount = 0;
+
     const regoGroupTableInsertData = issuedRegoList.map(
-      ({
-        plantId,
-        electricityProductionPeriod,
-        issuedGenerationAmount,
-        remainingGenerationAmount,
-        issuedStatus,
-      }) => {
+      (
+        {
+          plantId,
+          electricityProductionPeriod,
+          issuedGenerationAmount,
+          remainingGenerationAmount,
+          issuedStatus,
+        },
+        index
+      ) => {
         const identificationNumber = generateUniqueId();
         const status = RegoStatus.Active;
         const tradingStatus = RegoTradingStatus.Before;
         const issuedDate = dayjs().toDate();
         const expiredDate = dayjs().add(3, 'year').toDate();
+
+        const [integerIssuedGenerationAmount, decimalIssuedGenerationAmount] =
+          String(issuedGenerationAmount).split('.');
+
+        restIssuedGenerationAmount += Number(decimalIssuedGenerationAmount);
 
         if (issuedStatus === Yn.Y) {
           return res.json({
@@ -238,13 +248,30 @@ regoRouter.post('/issue', async (req, res) => {
           status,
           tradingStatus,
           electricityProductionPeriod,
-          issuedGenerationAmount,
+          index === issuedRegoList.length - 1
+            ? integerIssuedGenerationAmount +
+              Math.trunc(restIssuedGenerationAmount)
+            : integerIssuedGenerationAmount,
           remainingGenerationAmount,
           issuedDate,
           expiredDate,
         ];
       }
     ) as any[][];
+
+    const [, decimalRestIssuedGenerationAmount] = String(
+      restIssuedGenerationAmount
+    ).split('.');
+
+    if (Number(decimalRestIssuedGenerationAmount) > 0) {
+      await connection.execute(
+        `
+          UPDATE CONSUMER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE CONSUMER_ID = : 1
+        `,
+        [decimalRestIssuedGenerationAmount, decoded?.consumerId],
+        { autoCommit: true }
+      );
+    }
 
     const issuedGenerationAmountIndex = 6;
     const issuedGenerationAmounts = regoGroupTableInsertData.map(
