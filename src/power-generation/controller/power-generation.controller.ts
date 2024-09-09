@@ -11,25 +11,30 @@ enum YesOrNo {
   N = 'n',
 }
 
+type GetPowerGenerationRequestDto = {
+  plantId: number;
+};
+
 powerGenerationRouter.get('/', async (req, res) => {
+  const { plantId } = req.query as unknown as GetPowerGenerationRequestDto;
+
   const connection = await getConnection();
 
   try {
-    // TODO: UI상의 발급 일시 컬럼
-    const result = await connection.execute(
-      `SELECT 
-    "id",
-    "plantId",
-    "plantName",
-    "energySource",
-    "electricityProductionPeriod",
-    "powerGenerationAmount",
-    "issuedStatus",
-    "issuedDate",
-    "selfSupplyPriceRate",
-    "nationSupplyPriceRate",
-    "localGovernmentSupplyPriceRate"
-FROM 
+    let query = `
+    SELECT 
+      "id",
+      "plantId",
+      "plantName",
+      "energySource",
+      "electricityProductionPeriod",
+      "powerGenerationAmount",
+      "issuedStatus",
+      "issuedDate",
+      "selfSupplyPriceRate",
+      "nationSupplyPriceRate",
+      "localGovernmentSupplyPriceRate"
+    FROM 
     (
         SELECT 
             pg.POWER_GENERATION_ID AS "id",
@@ -48,13 +53,23 @@ FROM
             REGO.PLANT p
         JOIN 
             REGO.POWER_GENERATION pg ON p.PLANT_ID = pg.PLANT_ID
-        ORDER BY pg.ELECTRICITY_PRODUCTION_PERIOD DESC
-    )`,
-      [],
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      }
-    );
+  `;
+
+    // plantId가 존재하면 WHERE 절 추가
+    const bindParams: any[] = [];
+    if (plantId) {
+      query += ` WHERE p.PLANT_ID = :plantId`;
+      bindParams.push(plantId);
+    }
+
+    query += ` ORDER BY pg.ELECTRICITY_PRODUCTION_PERIOD DESC
+          )
+    `;
+
+    // TODO: UI상의 발급 일시 컬럼
+    const result = await connection.execute(query, bindParams, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
 
     const formattedResult = result.rows?.map((row: any) => ({
       ...row,
@@ -75,8 +90,6 @@ FROM
       issuedStatus: row.issuedStatus,
     }));
 
-    await connection.close();
-
     res.json({
       success: true,
       data: convertToCamelCase(formattedResult as any),
@@ -88,6 +101,6 @@ FROM
       error,
     });
   } finally {
-    await connection.close();
+    connection.close();
   }
 });

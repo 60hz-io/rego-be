@@ -31,6 +31,8 @@ plantRouter.get('/', async (req, res) => {
       success: false,
       error,
     });
+  } finally {
+    connection.close();
   }
 });
 
@@ -61,7 +63,7 @@ plantRouter.get('/:plantId', async (req, res) => {
       error,
     });
   } finally {
-    await connection.close();
+    connection.close();
   }
 });
 
@@ -127,7 +129,7 @@ plantRouter.put('/:plantId', async (req, res) => {
       error,
     });
   } finally {
-    await connection.close();
+    connection.close();
   }
 });
 
@@ -166,6 +168,6 @@ plantRouter.post('/', async (req, res) => {
     console.error(error);
     res.json({ success: false, error });
   } finally {
-    await connection.close();
+    connection.close();
   }
 });
