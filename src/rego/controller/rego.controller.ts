@@ -40,6 +40,7 @@ type GetRegoRequestDto = {
   accountName?: string;
   plantName?: string;
   electricityProductionPeriod?: string;
+  tradingStatus: RegoTradingStatus;
 };
 
 regoRouter.get('/', async (req, res) => {
@@ -50,8 +51,12 @@ regoRouter.get('/', async (req, res) => {
 
   try {
     connection = await getConnection();
-    const { accountName, plantName, electricityProductionPeriod } =
-      req.query as GetRegoRequestDto;
+    const {
+      accountName,
+      plantName,
+      electricityProductionPeriod,
+      tradingStatus,
+    } = req.query as GetRegoRequestDto;
 
     // 기본 SQL 쿼리문
     let query = `
@@ -104,6 +109,11 @@ regoRouter.get('/', async (req, res) => {
         'rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod'
       );
       parameters.push(`%${electricityProductionPeriod}%`);
+    }
+
+    if (tradingStatus) {
+      conditions.push('rg.TRADING_STATUS = :tradingStatus');
+      parameters.push(tradingStatus);
     }
 
     // 조건이 있을 경우 쿼리에 추가

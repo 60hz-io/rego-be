@@ -99,8 +99,6 @@ regoTradeInfoRouter.get('/', async (req, res) => {
       query += ' AND ' + conditions.join(' AND ');
     }
 
-    // query += " ORDER BY rti.BUYING_APPLICATION_DATE DESC;";
-
     const result = await connection.execute(query, parameters, {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
     });
@@ -418,6 +416,13 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
       return res.json({
         success: false,
         message: '해당 REGO는 현재 매수가 불가능한 상태입니다.',
+      });
+    }
+
+    if (camelRegoGroup.remainingGenerationAmount < buyingAmount) {
+      return res.json({
+        success: false,
+        message: '매수 신청 수량을 매수 가능 수량 이하로 설정해주세요.',
       });
     }
 
