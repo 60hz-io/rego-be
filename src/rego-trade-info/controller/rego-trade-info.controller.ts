@@ -274,97 +274,129 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
   const connection = await getConnection();
 
   try {
+    const regoGroupResult = await connection.execute(
+      `
+        SELECT rg.REGO_GROUP_ID, rg.STATUS, rg.TRADING_STATUS, rg.ISSUED_GENERATION_AMOUNT, 
+                                rg.REMAINING_GENERATION_AMOUNT, rg.IDENTIFICATION_NUMBER, rti.CONSUMER_ID, 
+                                rti.BUYING_AMOUNT, rti.TRADING_APPLICATION_STATUS
+                      FROM REGO_TRADE_INFO rti 
+                      INNER JOIN REGO_GROUP rg ON  rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
+                      WHERE rti.REGO_TRADE_INFO_ID = :0
+      `,
+      [regoTradeInfoId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const camelRegoGroupResult = convertToCamelCase(
+      regoGroupResult?.rows as any[]
+    )[0];
+
+    // 상태 !== 활성 || 거래 상태 !== 거래중
+    if (
+      camelRegoGroupResult.status !== RegoStatus.Active ||
+      camelRegoGroupResult.tradingStatus !== RegoTradingStatus.Trading
+    ) {
+      return res.json({
+        success: false,
+        message: {
+          title: 'REGO 거래 불가',
+          content: `거래가 불가능한 REGO 입니다.\n확인 후 매수 신청 거절을 진행해주세요.`,
+        },
+      });
+    }
+
+    // 보유 수량 < 신청 수량
+    if (
+      camelRegoGroupResult.remainingGenerationAmount <
+      camelRegoGroupResult.buyingAmount
+    ) {
+      return res.json({
+        success: false,
+        message: {
+          title: 'REGO 수량 부족',
+          content: `거래 가능한 REGO의 수량이 부족합니다.\n확인 후 매수 신청 거절을 진행해주세요.`,
+        },
+      });
+    }
+    // 거래 데이터 상태 !== '대기'
+    if (
+      camelRegoGroupResult.tradingApplicationStatus !==
+      TradingApplicationStatus.Pending
+    ) {
+      return res.json({
+        success: false,
+        message: {
+          title: 'REGO 거래 불가',
+          content: '이미 처리가 완료된 거래입니다.',
+        },
+      });
+    }
+
     // 거래 진행 상태 변경
     await connection.execute(
-      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve' WHERE REGO_TRADE_INFO_ID = :0`,
-      [regoTradeInfoId],
-      { autoCommit: true }
+      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve', TRADE_COMPLETED_DATE = :0 
+          WHERE REGO_TRADE_INFO_ID = :1`,
+      [new Date(), regoTradeInfoId]
     );
 
     // REGO_GROUP 거래 상태, 잔여량 변경
-    const regoTradeInfo = await connection.execute(
-      'SELECT REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
-      [regoTradeInfoId],
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        autoCommit: true,
-      }
-    );
-
-    const camelRegoTradeInfo = convertToCamelCase(
-      regoTradeInfo.rows as any[]
-    )[0];
-
-    const regoGroup = await connection.execute(
-      'SELECT ISSUED_GENERATION_AMOUNT, IDENTIFICATION_NUMBER, REMAINING_GENERATION_AMOUNT FROM REGO_GROUP WHERE REGO_GROUP_ID = :0',
-      [camelRegoTradeInfo.regoGroupId],
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      }
-    );
-
-    const camelRegoGroup = convertToCamelCase(regoGroup.rows as any[])[0];
-
     const remainingGenerationAmount =
-      Number(camelRegoGroup.issuedGenerationAmount) -
-      Number(camelRegoTradeInfo.buyingAmount);
+      Number(camelRegoGroupResult.remainingGenerationAmount) -
+      Number(camelRegoGroupResult.buyingAmount);
+    const status =
+      remainingGenerationAmount === 0 ? RegoStatus.Used : RegoStatus.Active;
     const tradingStatus =
       remainingGenerationAmount === 0
         ? RegoTradingStatus.End
         : RegoTradingStatus.Trading;
 
     await connection.execute(
-      'UPDATE REGO_GROUP SET REMAINING_GENERATION_AMOUNT = :0, TRADING_STATUS = :1 WHERE REGO_GROUP_ID = :2',
+      `UPDATE REGO_GROUP SET REMAINING_GENERATION_AMOUNT = :0, STATUS = :1, TRADING_STATUS = :2 
+                          WHERE REGO_GROUP_ID = :3`,
       [
         remainingGenerationAmount,
+        status,
         tradingStatus,
-        camelRegoTradeInfo.regoGroupId,
-      ],
-      { autoCommit: true }
-    );
-
-    const targetRegos = Array.from(
-      { length: camelRegoTradeInfo.buyingAmount },
-      (_, index) => index + 1
+        camelRegoGroupResult.regoGroupId,
+      ]
     );
 
     // buying_rego 테이블에 insert
-
     const startNumber =
-      camelRegoGroup.issuedGenerationAmount -
-      camelRegoGroup.remainingGenerationAmount;
+      camelRegoGroupResult.issuedGenerationAmount -
+      camelRegoGroupResult.remainingGenerationAmount;
 
     await connection.execute(
       `
-      INSERT INTO BUYING_REGO(REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT, IDENTIFICATION_NUMBER, 
+      INSERT INTO BUYING_REGO(REGO_GROUP_ID, CONSUMER_ID, BUYING_AMOUNT, IDENTIFICATION_NUMBER, REGO_STATUS,
                               IDENTIFICATION_START_NUMBER, IDENTIFICATION_END_NUMBER) 
-      VALUES(:0, :1, :2, :3, :4, :5)
+      VALUES(:0, :1, :2, :3, :4, :5, :6)
     `,
       [
-        camelRegoTradeInfo.regoGroupId,
-        camelRegoTradeInfo.consumerId,
-        camelRegoTradeInfo.buyingAmount,
-        camelRegoGroup.identificationNumber,
-        startNumber,
-        startNumber + camelRegoTradeInfo.buyingAmount,
-      ],
-      { autoCommit: true }
+        camelRegoGroupResult.regoGroupId,
+        camelRegoGroupResult.consumerId,
+        camelRegoGroupResult.buyingAmount,
+        camelRegoGroupResult.identificationNumber,
+        RegoStatus.Active,
+        startNumber + 1,
+        startNumber + camelRegoGroupResult.buyingAmount,
+      ]
     );
 
     // rego 테이블에 consumer_id 업데이트
-    const consumerId = camelRegoTradeInfo.consumerId;
+    const targetRegos = Array.from(
+      { length: camelRegoGroupResult.buyingAmount },
+      (_, index) => index + 1
+    );
 
     for await (const regoId of targetRegos) {
       await connection.execute(
-        `UPDATE REGO SET CONSUMER_ID = :0 , REGO_GROUP_ID = :1 WHERE REGO_IDENTIFICATION_NUMBER = :2`,
+        `UPDATE REGO SET CONSUMER_ID = :0 WHERE REGO_IDENTIFICATION_NUMBER = :1`,
         [
-          consumerId,
-          camelRegoTradeInfo.regoGroupId,
-          camelRegoGroup.issuedGenerationAmount -
-            camelRegoGroup.remainingGenerationAmount +
+          camelRegoGroupResult.consumerId,
+          camelRegoGroupResult.issuedGenerationAmount -
+            camelRegoGroupResult.remainingGenerationAmount +
             regoId,
-        ],
-        { autoCommit: true }
+        ]
       );
     }
 
@@ -376,6 +408,7 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    connection.rollback();
     res.json({
       success: false,
       error,
@@ -402,7 +435,7 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
 
   try {
     const regoGroup = await connection.execute(
-      'SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID= :0',
+      'SELECT * FROM REGO_GROUP WHERE REGO_GROUP_ID = :0',
       [regoGroupId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -415,14 +448,20 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
     ) {
       return res.json({
         success: false,
-        message: '해당 REGO는 현재 매수가 불가능한 상태입니다.',
+        message: {
+          title: '매수 불가 REGO',
+          content: '해당 REGO는 현재 매수가 불가능한 상태입니다.',
+        },
       });
     }
 
     if (camelRegoGroup.remainingGenerationAmount < buyingAmount) {
       return res.json({
         success: false,
-        message: '매수 신청 수량을 매수 가능 수량 이하로 설정해주세요.',
+        message: {
+          title: '매수 가능 수량 초과',
+          content: '매수 신청 수량을 매수 가능 수량 이하로 설정해주세요.',
+        },
       });
     }
 
@@ -437,7 +476,7 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
         camelRegoGroup.plantId,
         regoGroupId,
         identificationNumber,
-        'pending',
+        TradingApplicationStatus.Pending,
         buyingAmount,
         buyingPrice,
         new Date(),

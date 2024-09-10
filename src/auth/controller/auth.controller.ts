@@ -181,8 +181,6 @@ authRouter.post('/provider/sign-up', async (req, res) => {
 authRouter.post('/consumer/login', async (req, res) => {
   const connection = await getConnection();
 
-  console.log('before try');
-
   try {
     const { id, password } = req.body as LoginRequestDto;
 
@@ -193,7 +191,6 @@ authRouter.post('/consumer/login', async (req, res) => {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       }
     );
-    console.log('1');
 
     if (selectResult.rows?.length === 0) {
       return res.json({
@@ -210,7 +207,6 @@ authRouter.post('/consumer/login', async (req, res) => {
         code: 'locked',
       });
     }
-    console.log('2');
 
     const user = selectResult.rows?.[0];
 
@@ -220,7 +216,6 @@ authRouter.post('/consumer/login', async (req, res) => {
       userPassword: user?.PASSWORD,
       userSalt: user?.SALT,
     });
-    console.log('3');
 
     if (!isVerified) {
       const result = await connection.execute(
@@ -235,14 +230,12 @@ authRouter.post('/consumer/login', async (req, res) => {
         message: '로그인에 실패했습니다.',
       });
     }
-    console.log('4');
 
     await connection.execute(
       'UPDATE CONSUMER SET login_fail_count = 0 WHERE id = :0',
       [id],
       { autoCommit: true }
     );
-    console.log('5');
 
     // 토큰 발급
     const accessToken = jwt.sign(

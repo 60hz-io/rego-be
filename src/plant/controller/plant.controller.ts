@@ -12,8 +12,6 @@ plantRouter.get('/', async (req, res) => {
   //@ts-ignore
   const { providerId } = req.decoded;
 
-  console.log(providerId);
-
   try {
     const plants = await connection.execute(
       `SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE 

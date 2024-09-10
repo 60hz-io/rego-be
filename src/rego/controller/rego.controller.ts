@@ -224,25 +224,47 @@ regoRouter.post('/issue', async (req, res) => {
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
+    const identificationNumbers: string[] = [];
     const camelProvider = convertToCamelCase(provider?.rows as any[])[0];
 
     const regoGroupTableInsertData = issuedRegoList.map(
       (
         {
+          id,
           plantId,
           electricityProductionPeriod,
           issuedGenerationAmount,
-          remainingGenerationAmount,
           issuedStatus,
         },
         index
       ) => {
-        const identificationNumber = generateUniqueId();
+        // 만약 발급된 rego를 발급하려고 하면 에러
+        if (issuedStatus === Yn.Y) {
+          return res.json({
+            success: false,
+            message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
+          });
+        }
+
+        let identificationNumber: string;
+
+        // 고유 아이디를 만듭니다.
+        for (;;) {
+          identificationNumber = generateUniqueId();
+
+          if (!identificationNumbers.includes(identificationNumber)) {
+            identificationNumbers.push(identificationNumber);
+            break;
+          }
+        }
+
+        const powerGenerationId = id;
         const status = RegoStatus.Active;
         const tradingStatus = RegoTradingStatus.Before;
         const issuedDate = dayjs().toDate();
         const expiredDate = dayjs().add(3, 'year').toDate();
 
+        // 발급량(241.24)의 정수와 소수 분리
         const [integerIssuedGenerationAmount, decimalIssuedGenerationAmount] =
           String(issuedGenerationAmount).split('.');
 
@@ -252,16 +274,12 @@ regoRouter.post('/issue', async (req, res) => {
           )
         );
 
-        if (issuedStatus === Yn.Y) {
-          return res.json({
-            success: false,
-            message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
-          });
-        }
-
+        // DB에 저장될 발급 발전량
         let issuedGenerationAmountWithRest = 0;
 
+        // 마지막 REGO 발급하는 시기를 체크, 소수점 + 이월 발전량을 더하기 위함
         if (index === issuedRegoList.length - 1) {
+          // 발전량의 소수점 값 + 이월 발전량
           restIssuedGenerationAmount += camelProvider.carriedOverPowerGenAmount;
 
           if (
@@ -272,9 +290,11 @@ regoRouter.post('/issue', async (req, res) => {
             issuedGenerationAmountWithRest = Math.trunc(
               Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
             );
+
             const [, decimal] = String(
               Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
             ).split('.');
+
             이월_잔여량 = Number(convertToDecimal(Number(decimal)));
           } else {
             issuedGenerationAmountWithRest = Number(
@@ -291,6 +311,7 @@ regoRouter.post('/issue', async (req, res) => {
         return [
           decoded?.providerId,
           plantId,
+          powerGenerationId,
           identificationNumber,
           status,
           tradingStatus,
@@ -303,10 +324,7 @@ regoRouter.post('/issue', async (req, res) => {
       }
     ) as any[][];
 
-    console.log('restIssuedGenerationAmount', restIssuedGenerationAmount);
-    console.log('이월_잔여량', 이월_잔여량);
-
-    if (Number(이월_잔여량) > 0) {
+    if (Number(이월_잔여량) >= 0) {
       await connection.execute(
         `
           UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
@@ -316,47 +334,57 @@ regoRouter.post('/issue', async (req, res) => {
       );
     }
 
-    const issuedGenerationAmountIndex = 6;
+    // rego를 만들기 위해 발급량으로 배열을 만든다.
+    // 배열을 순회하면서 개수만큼의 rego를 식별 번호에 맞게 만든다.
+    // [325, 215, 516]
+    const ISSUED_GENERATION_AMOUNT_INDEX = 7;
     const issuedGenerationAmounts = regoGroupTableInsertData.map(
-      (item) => item[issuedGenerationAmountIndex]
+      (item) => item[ISSUED_GENERATION_AMOUNT_INDEX]
     );
     const flatIssuedGenerationAmounts = issuedGenerationAmounts.flat();
 
     for await (const issueRego of issuedRegoList) {
       await connection.execute(
         "UPDATE POWER_GENERATION SET ISSUED_STATUS = 'y' WHERE POWER_GENERATION_ID = :0",
-        [issueRego.id],
-        { autoCommit: true }
+        [issueRego.id]
       );
     }
 
     // bulk insert
-    const insertResult = await connection.executeMany(
-      `INSERT INTO REGO_GROUP(PROVIDER_ID, PLANT_ID, IDENTIFICATION_NUMBER, STATUS, TRADING_STATUS, ELECTRICITY_PRODUCTION_PERIOD,
+    await connection.executeMany(
+      `INSERT INTO REGO_GROUP(PROVIDER_ID, PLANT_ID, POWER_GENERATION_ID, IDENTIFICATION_NUMBER, STATUS, TRADING_STATUS, ELECTRICITY_PRODUCTION_PERIOD,
                             ISSUED_GENERATION_AMOUNT, REMAINING_GENERATION_AMOUNT, ISSUED_DATE, EXPIRED_DATE)
-            VALUES(:0, :1, :2, :3, :4, :5, :6, :7, :8, :9)`,
+            VALUES(:0, :1, :2, :3, :4, :5, :6, :7, :8, :9, :10)
+            `,
       regoGroupTableInsertData,
-      { autoCommit: true }
+      {
+        autoCommit: true,
+      }
     );
 
-    const selectIds = await connection.execute(
-      'SELECT MAX(REGO_GROUP_ID) AS last_id FROM REGO_GROUP',
-      [],
+    const selectId = await connection.execute(
+      `
+        SELECT REGO_GROUP_ID FROM REGO_GROUP WHERE POWER_GENERATION_ID = :0
+      `,
+      [issuedRegoList[issuedRegoList.length - 1].id],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
-    const rows = selectIds.rows?.[0] as { LAST_ID: number };
+
+    const lastId = (selectId.rows?.[0] as any).REGO_GROUP_ID;
 
     const lastIds = Array.from(
       { length: regoGroupTableInsertData.length },
-      (_, index) => rows.LAST_ID - regoGroupTableInsertData.length + index + 1
+      (_, index) => lastId - regoGroupTableInsertData.length + index + 1
     );
+
+    const IDENTIFICATION_NUMBER_INDEX = 3;
 
     for (let i = 0; i < flatIssuedGenerationAmounts.length; i += 1) {
       const amounts = Number(flatIssuedGenerationAmounts[i]);
 
       const insertData = Array.from({ length: amounts }, (_, index) => [
         lastIds[i],
-        regoGroupTableInsertData[i][2],
+        regoGroupTableInsertData[i][IDENTIFICATION_NUMBER_INDEX],
         index + 1,
       ]);
 
@@ -366,14 +394,6 @@ regoRouter.post('/issue', async (req, res) => {
       );
     }
 
-    // rego_group_id는 lastId에서, identification_number는 regoGroupTableInsertData, rego의 identification_number는 map 돌릴 때 index로
-
-    // console.log(insertResult);
-
-    // insert된 id 배열로
-    // rego table에 bulk insert
-    // 개별적으로 고유 식별번호 만들어줘야함 rego_group 식별번호 + index
-
     await connection.commit();
 
     res.json({
@@ -381,6 +401,7 @@ regoRouter.post('/issue', async (req, res) => {
     });
   } catch (error) {
     console.log(error);
+    connection.rollback();
     res.json({ success: false, error });
   } finally {
     await connection.close();
