@@ -152,6 +152,7 @@ regoTradeInfoRouter.get('/electricity-production-period', async (req, res) => {
         SELECT rg.ELECTRICITY_PRODUCTION_PERIOD FROM REGO_TRADE_INFO rti  
                                               INNER JOIN REGO_GROUP rg ON rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
                                               WHERE rti.PROVIDER_ID = :0 AND rti.TRADING_APPLICATION_STATUS = :1
+                                                      AND CONSUMER_ID IS NOT NULL
       `,
         [providerId, TradingApplicationStatus.Pending],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -161,11 +162,10 @@ regoTradeInfoRouter.get('/electricity-production-period', async (req, res) => {
     if (consumerId) {
       result = await connection.execute(
         `
-        SELECT rg.ELECTRICITY_PRODUCTION_PERIOD FROM REGO_TRADE_INFO rti  
-                                              INNER JOIN REGO_GROUP rg ON rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
-                                              WHERE rti.CONSUMER_ID = :0 AND rti.TRADING_APPLICATION_STATUS = :1
+        SELECT ELECTRICITY_PRODUCTION_PERIOD FROM REGO_GROUP
+                                              WHERE TRADING_STATUS = :0
       `,
-        [consumerId, TradingApplicationStatus.Pending],
+        [RegoTradingStatus.Trading],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
     }
