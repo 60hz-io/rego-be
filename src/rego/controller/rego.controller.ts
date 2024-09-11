@@ -238,6 +238,7 @@ regoRouter.post('/issue', async (req, res) => {
         },
         index
       ) => {
+        // TODO: DB에서 값을 읽어서 막아햐함
         // 만약 발급된 rego를 발급하려고 하면 에러
         if (issuedStatus === Yn.Y) {
           return res.json({
