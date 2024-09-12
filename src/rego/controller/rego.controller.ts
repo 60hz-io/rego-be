@@ -202,136 +202,354 @@ regoRouter.post('/issue', async (req, res) => {
   // @ts-ignore
   const { decoded } = req;
 
-  // 해당 값들을 이용해서 테이블에 insert할 데이터 형식을 만든다.
-  // insert를 한다.
-  // 1. REGO_GROUP
-  // 2. REGO
-  // 성공했다는 response를 전달한다.
-
-  // bulk insert를 위해 output을 2차원 배열로 만든다.
-
+  if (issuedRegoList?.length === 0) {
+    return res.json({
+      success: false,
+      message: '올바른 데이터를 전달해주세요.',
+    });
+  }
   const connection = await getConnection();
 
   try {
-    let restIssuedGenerationAmount = 0;
-    let 이월_잔여량 = 0;
+    const plantId = issuedRegoList[0].plantId;
 
-    const provider = await connection.execute(
+    const plantResult = await connection.execute(
       `
-        SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE PROVIDER_ID = :0
+        SELECT PROVIDER_ID, REGION_ID, SELF_SUPPLY_PRICE_PERCENT, NATION_SUPPLY_PRICE_PERCENT, LOCAL_GOV_SUPPLY_PRICE_PERCENT
+          FROM PLANT
+          WHERE PLANT_ID = :0
       `,
-      [decoded?.providerId],
+      [plantId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+    const camelPlantResult = convertToCamelCase(plantResult.rows as any[])[0];
 
-    const identificationNumbers: string[] = [];
-    const camelProvider = convertToCamelCase(provider?.rows as any[])[0];
+    if (camelPlantResult.providerId !== decoded?.providerId) {
+      return res.json({
+        success: false,
+        message: '유저가 소유한 발전소가 아닙니다.',
+      });
+    }
 
-    const regoGroupTableInsertData = issuedRegoList.map(
-      (
-        {
-          id,
-          plantId,
-          electricityProductionPeriod,
-          issuedGenerationAmount,
-          issuedStatus,
-        },
-        index
-      ) => {
-        // TODO: DB에서 값을 읽어서 막아햐함
-        // 만약 발급된 rego를 발급하려고 하면 에러
-        if (issuedStatus === Yn.Y) {
-          return res.json({
-            success: false,
-            message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
-          });
-        }
+    // 발전소에서 재원 비율을 구합니다.
+    const {
+      selfSupplyPricePercent,
+      nationSupplyPricePercent,
+      localGovSupplyPricePercent,
+    } = camelPlantResult;
 
-        let identificationNumber: string;
+    const [
+      selfProviderResult,
+      nationProviderResult,
+      localGovernmentProviderResult,
+    ] = await Promise.all([
+      connection.execute(
+        `
+          SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE PROVIDER_ID = :0
+          FOR UPDATE
+        `,
+        [decoded?.providerId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      ),
+      connection.execute(
+        `
+          SELECT CARRIED_OVER_POWER_GEN_AMOUNT, PROVIDER_ID FROM PROVIDER
+            WHERE ACCOUNT_TYPE = 'nation' FOR UPDATE
+        `,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      ),
+      connection.execute(
+        `
+          SELECT p.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID FROM PLANT pl
+            INNER JOIN PROVIDER p ON pl.REGION_ID = p.REGION_ID
+            WHERE pl.PLANT_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment'
+            FOR UPDATE
+        `,
+        [plantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      ),
+    ]);
 
-        // 고유 아이디를 만듭니다.
-        for (;;) {
-          identificationNumber = generateUniqueId();
+    // 각 재원별 이월 발전량
+    const selfCarriedOverPowerGenAmount = (selfProviderResult?.rows as any[])[0]
+      .CARRIED_OVER_POWER_GEN_AMOUNT;
+    const nationCarriedOverPowerGenAmount = (
+      nationProviderResult?.rows as any[]
+    )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
 
-          if (!identificationNumbers.includes(identificationNumber)) {
-            identificationNumbers.push(identificationNumber);
-            break;
-          }
-        }
+    const localCarriedOverPowerGenAmount = (
+      localGovernmentProviderResult?.rows as any[]
+    )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
 
-        const powerGenerationId = id;
-        const status = RegoStatus.Active;
-        const tradingStatus = RegoTradingStatus.Before;
-        const issuedDate = dayjs().toDate();
-        const expiredDate = dayjs().add(3, 'year').toDate();
+    const regoGroupTableInsertData: any[] = [];
+    const 소유주_고유_식별번호_묶음: string[] = [];
+    const 국가_고유_식별번호_묶음: string[] = [];
+    const 지자체_고유_식별번호_묶음: string[] = [];
 
-        // 발급량(241.24)의 정수와 소수 분리
-        const [integerIssuedGenerationAmount, decimalIssuedGenerationAmount] =
-          String(issuedGenerationAmount).split('.');
+    // 이월 잔여량
+    let 소유주_이월_잔여량 = 0;
+    let 국가_이월_잔여량 = 0;
+    let 지자체_이월_잔여량 = 0;
 
-        restIssuedGenerationAmount += Number(
-          formatNumberToThreeDecimals(
-            convertToDecimal(Number(decimalIssuedGenerationAmount))
-          )
-        );
+    // 발전량에 대해서 발급 상태 검증
+    for (let i = 0; i < issuedRegoList.length; i += 1) {
+      const { id: powerGenerationId } = issuedRegoList[i];
 
-        // DB에 저장될 발급 발전량
-        let issuedGenerationAmountWithRest = 0;
+      const regoGroup = await connection.execute(
+        `
+          SELECT POWER_GENERATION_AMOUNT, ELECTRICITY_PRODUCTION_PERIOD, ISSUED_STATUS FROM POWER_GENERATION 
+            WHERE POWER_GENERATION_ID = :0
+        `,
+        [powerGenerationId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      const camelRegoGroup = convertToCamelCase(regoGroup?.rows as any[])[0];
+      const {
+        powerGenerationAmount,
+        electricityProductionPeriod,
+        issuedStatus,
+      } = camelRegoGroup;
 
-        // 마지막 REGO 발급하는 시기를 체크, 소수점 + 이월 발전량을 더하기 위함
-        if (index === issuedRegoList.length - 1) {
-          // 발전량의 소수점 값 + 이월 발전량
-          restIssuedGenerationAmount += camelProvider.carriedOverPowerGenAmount;
-
-          if (
-            Math.trunc(
-              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
-            ) > Math.trunc(Number(integerIssuedGenerationAmount))
-          ) {
-            issuedGenerationAmountWithRest = Math.trunc(
-              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
-            );
-
-            const [, decimal] = String(
-              Number(integerIssuedGenerationAmount) + restIssuedGenerationAmount
-            ).split('.');
-
-            이월_잔여량 = Number(convertToDecimal(Number(decimal)));
-          } else {
-            issuedGenerationAmountWithRest = Number(
-              integerIssuedGenerationAmount
-            );
-            이월_잔여량 = restIssuedGenerationAmount;
-          }
-        } else {
-          issuedGenerationAmountWithRest = Number(
-            integerIssuedGenerationAmount
-          );
-        }
-
-        return [
-          decoded?.providerId,
-          plantId,
-          powerGenerationId,
-          identificationNumber,
-          status,
-          tradingStatus,
-          electricityProductionPeriod,
-          issuedGenerationAmountWithRest,
-          issuedGenerationAmountWithRest,
-          issuedDate,
-          expiredDate,
-        ];
+      if (issuedStatus === Yn.Y) {
+        return res.json({
+          success: false,
+          message: '이미 해당 발전량에 대해 REGO가 발급되었습니다.',
+        });
       }
-    ) as any[][];
 
-    if (Number(이월_잔여량) >= 0) {
+      // 고유 아이디를 만듭니다.
+      let 소유주_고유_식별번호: string;
+      let 국가_고유_식별번호: string;
+      let 지자체_고유_식별번호: string;
+
+      while (true) {
+        소유주_고유_식별번호 = generateUniqueId();
+
+        if (!소유주_고유_식별번호_묶음.includes(소유주_고유_식별번호)) {
+          소유주_고유_식별번호_묶음.push(소유주_고유_식별번호);
+          break;
+        }
+      }
+      while (true) {
+        국가_고유_식별번호 = generateUniqueId();
+
+        if (!국가_고유_식별번호_묶음.includes(국가_고유_식별번호)) {
+          국가_고유_식별번호_묶음.push(국가_고유_식별번호);
+          break;
+        }
+      }
+      while (true) {
+        지자체_고유_식별번호 = generateUniqueId();
+
+        if (!지자체_고유_식별번호_묶음.includes(지자체_고유_식별번호)) {
+          지자체_고유_식별번호_묶음.push(지자체_고유_식별번호);
+          break;
+        }
+      }
+
+      // 공통으로 쓰이는 값
+      const status = RegoStatus.Active;
+      const tradingStatus = RegoTradingStatus.Before;
+      const issuedDate = dayjs().toDate();
+      const expiredDate = dayjs().add(3, 'year').toDate();
+
+      // 발전량에서 분리된 소수점들의 총합
+      let 소유주_소수점_총합 = 0;
+      let 국가_소수점_총합 = 0;
+      let 지자체_소수점_총합 = 0;
+
+      // DB에 저장될 발급 발전량
+      let 최종_소유주_발급량 = 0;
+      let 최종_국가_발급량 = 0;
+      let 최종_지자체_발급량 = 0;
+
+      const 소유주_발전량 = formatNumberToThreeDecimals(
+        powerGenerationAmount * (selfSupplyPricePercent / 100)
+      );
+      const 국가_발전량 = formatNumberToThreeDecimals(
+        powerGenerationAmount * (nationSupplyPricePercent / 100)
+      );
+      const 지자체_발전량 = formatNumberToThreeDecimals(
+        powerGenerationAmount * (localGovSupplyPricePercent / 100)
+      );
+
+      // 발급량(241.24)의 정수와 소수 분리
+      const [소유주_발전량_정수, 소유주_발전량_소수] =
+        String(소유주_발전량).split('.');
+
+      소유주_소수점_총합 += Number(
+        formatNumberToThreeDecimals(
+          convertToDecimal(Number(소유주_발전량_소수))
+        )
+      );
+
+      const [국가_발전량_정수, 국가_발전량_소수] =
+        String(국가_발전량).split('.');
+
+      국가_소수점_총합 += Number(
+        formatNumberToThreeDecimals(convertToDecimal(Number(국가_발전량_소수)))
+      );
+
+      const [지자체_발전량_정수, 지자체_발전량_소수] =
+        String(지자체_발전량).split('.');
+
+      지자체_소수점_총합 += Number(
+        formatNumberToThreeDecimals(
+          convertToDecimal(Number(지자체_발전량_소수))
+        )
+      );
+
+      // 마지막 REGO 발급하는 시기를 체크, 소수점 + 이월 발전량을 더하기 위함
+      if (i === issuedRegoList.length - 1) {
+        // 발전량의 소수점 값 + 이월 발전량
+        소유주_소수점_총합 += selfCarriedOverPowerGenAmount;
+
+        if (
+          Math.trunc(Number(소유주_발전량_정수) + 소유주_소수점_총합) >
+          Math.trunc(Number(소유주_발전량_정수))
+        ) {
+          최종_소유주_발급량 = Math.trunc(
+            Number(소유주_발전량_정수) + 소유주_소수점_총합
+          );
+
+          const [, decimal] = String(
+            Number(소유주_발전량_정수) + 소유주_소수점_총합
+          ).split('.');
+
+          소유주_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
+        } else {
+          최종_소유주_발급량 = Number(소유주_발전량_정수);
+          소유주_이월_잔여량 = 소유주_소수점_총합;
+        }
+      } else {
+        최종_소유주_발급량 = Number(소유주_발전량_정수);
+      }
+
+      if (i === issuedRegoList.length - 1) {
+        // 발전량의 소수점 값 + 이월 발전량
+        국가_소수점_총합 += nationCarriedOverPowerGenAmount;
+
+        if (
+          Math.trunc(Number(국가_발전량_정수) + 국가_소수점_총합) >
+          Math.trunc(Number(국가_발전량_정수))
+        ) {
+          최종_국가_발급량 = Math.trunc(
+            Number(국가_발전량_정수) + 국가_소수점_총합
+          );
+
+          const [, decimal] = String(
+            Number(국가_발전량_정수) + 국가_소수점_총합
+          ).split('.');
+
+          국가_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
+        } else {
+          최종_국가_발급량 = Number(국가_발전량_정수);
+          국가_이월_잔여량 = 국가_소수점_총합;
+        }
+      } else {
+        최종_국가_발급량 = Number(국가_발전량_정수);
+      }
+
+      if (i === issuedRegoList.length - 1) {
+        // 발전량의 소수점 값 + 이월 발전량
+        지자체_소수점_총합 += localCarriedOverPowerGenAmount;
+
+        if (
+          Math.trunc(Number(지자체_발전량_정수) + 지자체_소수점_총합) >
+          Math.trunc(Number(지자체_발전량_정수))
+        ) {
+          최종_지자체_발급량 = Math.trunc(
+            Number(지자체_발전량_정수) + 지자체_소수점_총합
+          );
+
+          const [, decimal] = String(
+            Number(지자체_발전량_정수) + 지자체_소수점_총합
+          ).split('.');
+
+          지자체_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
+        } else {
+          최종_지자체_발급량 = Number(지자체_발전량_정수);
+          지자체_이월_잔여량 = 지자체_소수점_총합;
+        }
+      } else {
+        최종_지자체_발급량 = Number(지자체_발전량_정수);
+      }
+
+      const 소유주_배열 = [
+        decoded?.providerId,
+        plantId,
+        powerGenerationId,
+        소유주_고유_식별번호,
+        status,
+        tradingStatus,
+        dayjs(electricityProductionPeriod).format('YYYY-MM'),
+        최종_소유주_발급량,
+        최종_소유주_발급량,
+        issuedDate,
+        expiredDate,
+      ];
+
+      const 국가_배열 = [
+        (nationProviderResult?.rows as any)[0].PROVIDER_ID,
+        plantId,
+        powerGenerationId,
+        국가_고유_식별번호,
+        status,
+        tradingStatus,
+        dayjs(electricityProductionPeriod).format('YYYY-MM'),
+        최종_국가_발급량,
+        최종_국가_발급량,
+        issuedDate,
+        expiredDate,
+      ];
+
+      const 지자체_배열 = [
+        (localGovernmentProviderResult?.rows as any)[0].PROVIDER_ID,
+        plantId,
+        powerGenerationId,
+        지자체_고유_식별번호,
+        status,
+        tradingStatus,
+        dayjs(electricityProductionPeriod).format('YYYY-MM'),
+        최종_지자체_발급량,
+        최종_지자체_발급량,
+        issuedDate,
+        expiredDate,
+      ];
+
+      regoGroupTableInsertData.push(소유주_배열, 국가_배열, 지자체_배열);
+
+      // 여기서 데이터 만들어서 배열에 push (bulk insert 용도)
+    }
+
+    if (Number(소유주_이월_잔여량) >= 0) {
       await connection.execute(
         `
           UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
         `,
-        [이월_잔여량, decoded?.providerId],
-        { autoCommit: true }
+        [소유주_이월_잔여량, decoded?.providerId]
+      );
+    }
+    if (Number(국가_이월_잔여량) >= 0) {
+      await connection.execute(
+        `
+          UPDATE PROVIDER 
+            SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 
+            WHERE ACCOUNT_TYPE = 'nation'
+        `,
+        [국가_이월_잔여량]
+      );
+    }
+    if (Number(지자체_이월_잔여량) >= 0) {
+      await connection.execute(
+        `
+          UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
+        `,
+        [
+          지자체_이월_잔여량,
+          (localGovernmentProviderResult?.rows as any)[0].PROVIDER_ID,
+        ]
       );
     }
 
@@ -365,9 +583,15 @@ regoRouter.post('/issue', async (req, res) => {
 
     const selectId = await connection.execute(
       `
-        SELECT REGO_GROUP_ID FROM REGO_GROUP WHERE POWER_GENERATION_ID = :0
+        SELECT REGO_GROUP_ID
+          FROM (
+              SELECT REGO_GROUP_ID
+              FROM REGO_GROUP
+              ORDER BY REGO_GROUP_ID DESC
+          )
+          WHERE ROWNUM = 1
       `,
-      [issuedRegoList[issuedRegoList.length - 1].id],
+      [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
@@ -401,7 +625,7 @@ regoRouter.post('/issue', async (req, res) => {
       success: true,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
     connection.rollback();
     res.json({ success: false, error });
   } finally {

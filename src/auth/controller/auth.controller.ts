@@ -172,6 +172,7 @@ authRouter.post('/provider/sign-up', async (req, res) => {
       success: true,
     });
   } catch (error) {
+    console.error(error);
     res.json({ success: false });
   } finally {
     await connection.close();

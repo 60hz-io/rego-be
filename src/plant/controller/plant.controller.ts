@@ -87,19 +87,19 @@ plantRouter.put('/:plantId', async (req, res) => {
     const { selfSupplyPrice, nationSupplyPrice, localGovernmentSupplyPrice } =
       req.body as PlantUpdateRequestDto;
 
-    const total =
+    const totalPrice =
       Number(selfSupplyPrice) +
       Number(nationSupplyPrice) +
       Number(localGovernmentSupplyPrice);
 
     const selfSupplyPricePercent = formatNumberToThreeDecimals(
-      (selfSupplyPrice / total) * 100
+      (selfSupplyPrice / totalPrice) * 100
     );
     const nationSupplyPricePercent = formatNumberToThreeDecimals(
-      (nationSupplyPrice / total) * 100
+      (nationSupplyPrice / totalPrice) * 100
     );
     const localGovernmentSupplyPricePercent = formatNumberToThreeDecimals(
-      (localGovernmentSupplyPrice / total) * 100
+      (localGovernmentSupplyPrice / totalPrice) * 100
     );
 
     await connection.execute(
@@ -133,45 +133,6 @@ plantRouter.put('/:plantId', async (req, res) => {
       success: false,
       error,
     });
-  } finally {
-    connection.close();
-  }
-});
-
-plantRouter.post('/', async (req, res) => {
-  const connection = await getConnection();
-
-  try {
-    const result = await connection.execute(
-      ` SELECT 
-        AVG(rti.BUYING_PRICE) AS AVG_REC_PRICE,
-        COUNT(*) AS TRADE_COUNT,
-        SUM(rti.BUYING_AMOUNT) AS TOTAL_QUANTITY
-      FROM 
-        REGO.REGO_TRADE_INFO rti
-      WHERE 
-        rti.TRADE_COMPLETED_DATE >= SYSDATE - INTERVAL '1' DAY
-        AND rti.BUYING_AMOUNT > 0`,
-      [],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-
-    const { AVG_REC_PRICE, TRADE_COUNT, TOTAL_QUANTITY } = result
-      .rows?.[0] as any;
-
-    await connection.execute(
-      'INSERT INTO REGO_TRADE_INFO_STATISTICS VALUES(:0, :1, :2)',
-      [AVG_REC_PRICE, TRADE_COUNT, TOTAL_QUANTITY]
-    );
-
-    connection.commit();
-
-    res.json({
-      success: true,
-    });
-  } catch (error) {
-    console.error(error);
-    res.json({ success: false, error });
   } finally {
     connection.close();
   }

@@ -23,8 +23,42 @@ regoConfirmationRouter.get('/', async (req, res) => {
   try {
     const result = await connection.execute(
       `
-        SELECT rc.* FROM REGO_CONFIRMATION rc
-          ORDER BY rc.CREATED_DATE DESC
+SELECT DISTINCT
+    rc.*,
+    (SELECT COUNT(*)
+     FROM CERTIFICATION_ISSUE_REGO cir
+     WHERE cir.REGO_CERTIFICATION_ID = rc.REGO_CONFIRMATION_ID) AS issue_rego_count,
+    br.IDENTIFICATION_NUMBER,
+    br.IDENTIFICATION_START_NUMBER,
+    br.IDENTIFICATION_END_NUMBER,
+    c.account_name,
+    c.workplace_address,
+    c.representative_name,
+    (SELECT MAX(pg.ELECTRICITY_PRODUCTION_PERIOD)
+     FROM POWER_GENERATION pg
+     WHERE pg.PLANT_ID = p.PLANT_ID) AS ELECTRICITY_PRODUCTION_PERIOD, -- 가장 최신 발전 기간만 가져옴
+    p.plant_name,
+    p.location,
+    p.INSPECTION_DATE_BEFORE_USAGE
+FROM
+    REGO_CONFIRMATION rc
+LEFT JOIN (
+    SELECT
+        cir.REGO_CERTIFICATION_ID,
+        cir.BUYING_REGO_ID,
+        ROW_NUMBER() OVER (PARTITION BY cir.REGO_CERTIFICATION_ID ORDER BY cir.CREATED_TIME DESC) AS rn
+    FROM
+        CERTIFICATION_ISSUE_REGO cir
+) cir ON rc.REGO_CONFIRMATION_ID = cir.REGO_CERTIFICATION_ID
+AND cir.rn = 1
+LEFT JOIN
+    BUYING_REGO br ON cir.BUYING_REGO_ID = br.BUYING_REGO_ID
+LEFT JOIN
+    CONSUMER c ON rc.CONSUMER_ID = c.CONSUMER_ID
+LEFT JOIN
+    REGO_GROUP rg ON br.REGO_GROUP_ID = rg.REGO_GROUP_ID
+LEFT JOIN
+    PLANT p ON rg.PLANT_ID = p.PLANT_ID
       `,
       [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }

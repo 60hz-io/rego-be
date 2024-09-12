@@ -3,6 +3,7 @@ import { getConnection } from '../../app-data-source';
 import oracledb from 'oracledb';
 import { convertToCamelCase } from '../../utils/convertToCamelCase';
 import dayjs from 'dayjs';
+import { formatNumberToThreeDecimals } from '../../utils/formatNumberToThreeDecimals';
 
 export const powerGenerationRouter = express.Router();
 
@@ -21,6 +22,22 @@ powerGenerationRouter.get('/', async (req, res) => {
   const connection = await getConnection();
 
   try {
+    const plantResult = await connection.execute(
+      `
+        SELECT * FROM PLANT WHERE PLANT_ID = :0
+      `,
+      [plantId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const camelPlantResult = convertToCamelCase(plantResult?.rows as any[])[0];
+
+    const {
+      selfSupplyPricePercent,
+      nationSupplyPricePercent,
+      localGovSupplyPricePercent,
+    } = camelPlantResult;
+
     let query = `
     SELECT 
       "id",
@@ -47,8 +64,7 @@ powerGenerationRouter.get('/', async (req, res) => {
             pg.INFO_COLLECTION_DATE AS "issuedDate",
             (TO_NUMBER(p.SELF_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "selfSupplyPriceRate",
             (TO_NUMBER(p.NATION_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "nationSupplyPriceRate",
-            (TO_NUMBER(p.LOCAL_GOVERNMENT_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "localGovernmentSupplyPriceRate",
-            ROW_NUMBER() OVER (ORDER BY p.PLANT_NAME, pg.ELECTRICITY_PRODUCTION_PERIOD) AS rnum
+            (TO_NUMBER(p.LOCAL_GOVERNMENT_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "localGovernmentSupplyPriceRate"
         FROM 
             REGO.PLANT p
         JOIN 
@@ -66,10 +82,16 @@ powerGenerationRouter.get('/', async (req, res) => {
           )
     `;
 
-    // TODO: UI상의 발급 일시 컬럼
     const result = await connection.execute(query, bindParams, {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
     });
+
+    const getGenerationAmountByPercent = (
+      generationAmount: number,
+      percent: number
+    ) => {
+      return generationAmount * (percent / 100);
+    };
 
     const formattedResult = result.rows?.map((row: any) => ({
       ...row,
@@ -77,16 +99,44 @@ powerGenerationRouter.get('/', async (req, res) => {
         row.electricityProductionPeriod
       ).format('YYYY-MM'),
       powerGenerationAmountByResource:
-        row.powerGenerationAmount * (row.selfSupplyPriceRate / 100),
+        row.powerGenerationAmount * (selfSupplyPricePercent / 100),
+
+      // TODO: -Count 값들은 generation으로 변경되면 제거되어야합니다.
       regoIssuedCount: Math.trunc(
-        row.powerGenerationAmount * (row.selfSupplyPriceRate / 100)
+        row.powerGenerationAmount * (selfSupplyPricePercent / 100)
       ),
       nationRegoIssuedCount: Math.trunc(
-        row.powerGenerationAmount * (row.nationSupplyPriceRate / 100)
+        row.powerGenerationAmount * (nationSupplyPricePercent / 100)
       ),
       localGovernmentRegoIssuedCount: Math.trunc(
-        row.powerGenerationAmount * (row.localGovernmentSupplyPriceRate / 100)
+        row.powerGenerationAmount * (localGovSupplyPricePercent / 100)
       ),
+
+      selfGenerationAmount: Number(
+        formatNumberToThreeDecimals(
+          getGenerationAmountByPercent(
+            row.powerGenerationAmount,
+            selfSupplyPricePercent
+          )
+        )
+      ),
+      nationGenerationAmount: Number(
+        formatNumberToThreeDecimals(
+          getGenerationAmountByPercent(
+            row.powerGenerationAmount,
+            nationSupplyPricePercent
+          )
+        )
+      ),
+      localGovernmentGenerationAmount: Number(
+        formatNumberToThreeDecimals(
+          getGenerationAmountByPercent(
+            row.powerGenerationAmount,
+            localGovSupplyPricePercent
+          )
+        )
+      ),
+
       issuedStatus: row.issuedStatus,
     }));
 
