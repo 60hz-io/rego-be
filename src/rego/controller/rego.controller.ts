@@ -44,13 +44,9 @@ type GetRegoRequestDto = {
 };
 
 regoRouter.get('/', async (req, res) => {
-  // rego 조회
-  // 필터링 - 매도계정, 발전소명, 전력생산기간
-
-  let connection;
+  const connection = await getConnection();
 
   try {
-    connection = await getConnection();
     const {
       accountName,
       plantName,
@@ -58,7 +54,6 @@ regoRouter.get('/', async (req, res) => {
       tradingStatus,
     } = req.query as GetRegoRequestDto;
 
-    // 기본 SQL 쿼리문
     let query = `
       SELECT 
         rg.REGO_GROUP_ID as id,
@@ -88,12 +83,9 @@ regoRouter.get('/', async (req, res) => {
       WHERE 1 = 1
     `;
 
-    // ORDER BY rg.ELECTRICITY_PRODUCTION_PERIOD DESC
-    // WHERE 절 추가를 위한 조건 배열 및 매개변수 설정
     const conditions = [];
     const parameters = [];
 
-    // request 쿼리 파라미터를 확인하여 조건을 추가
     if (accountName) {
       conditions.push('p.ACCOUNT_NAME LIKE :accountName');
       parameters.push(`%${accountName}%`);
@@ -139,7 +131,106 @@ regoRouter.get('/', async (req, res) => {
       error,
     });
   } finally {
-    connection?.close();
+    connection.close();
+  }
+});
+
+regoRouter.get('/me', async (req, res) => {
+  const connection = await getConnection();
+  // @ts-expect-error
+  const { providerId } = req.decoded;
+
+  try {
+    const {
+      accountName,
+      plantName,
+      electricityProductionPeriod,
+      tradingStatus,
+    } = req.query as GetRegoRequestDto;
+
+    let query = `
+      SELECT 
+        rg.REGO_GROUP_ID as id,
+        rg.PROVIDER_ID,
+        rg.PLANT_ID,
+        p.ACCOUNT_NAME as SELLER_ACCOUNT_NAME,
+        pl.PLANT_NAME,
+        pl.GENERATION_PURPOSE as PLANT_TYPE,
+        pl.LOCATION,
+        pl.INSPECTION_DATE_BEFORE_USAGE,
+        pl.GENERATION_PURPOSE,
+        pl.ENERGY_SOURCE,
+        rg.IDENTIFICATION_NUMBER,
+        rg.STATUS,
+        rg.TRADING_STATUS,
+        rg.ELECTRICITY_PRODUCTION_PERIOD,
+        rg.REMAINING_GENERATION_AMOUNT,
+        rg.ISSUED_GENERATION_AMOUNT,
+        rg.ISSUED_DATE,
+        rg.EXPIRED_DATE,
+        rg.CREATED_TIME,
+        rg.UPDATED_TIME,
+        rg.TRANSACTION_REGISTRATION_DATE
+      FROM REGO_GROUP rg
+      INNER JOIN PROVIDER p ON rg.PROVIDER_ID = p.PROVIDER_ID
+      INNER JOIN PLANT pl ON rg.PLANT_ID = pl.PLANT_ID
+      WHERE 1 = 1
+    `;
+
+    const conditions = [];
+    const parameters = [];
+
+    if (accountName) {
+      conditions.push('p.ACCOUNT_NAME LIKE :accountName');
+      parameters.push(`%${accountName}%`);
+    }
+
+    if (plantName) {
+      conditions.push('pl.PLANT_NAME LIKE :plantName');
+      parameters.push(`%${plantName}%`);
+    }
+
+    if (electricityProductionPeriod) {
+      conditions.push(
+        'rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod'
+      );
+      parameters.push(`%${electricityProductionPeriod}%`);
+    }
+
+    if (tradingStatus) {
+      conditions.push('rg.TRADING_STATUS = :tradingStatus');
+      parameters.push(tradingStatus);
+    }
+
+    if (providerId) {
+      conditions.push('rg.PROVIDER_ID = :providerId');
+      parameters.push(providerId);
+    }
+
+    // 조건이 있을 경우 쿼리에 추가
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    // SQL 쿼리 실행
+    const result = await connection.execute(query, parameters, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+
+    res.json({
+      success: true,
+      data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
+        return b.issuedDate - a.issuedDate;
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      error,
+    });
+  } finally {
+    connection.close();
   }
 });
 

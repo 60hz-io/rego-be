@@ -135,6 +135,129 @@ regoTradeInfoRouter.get('/', async (req, res) => {
   }
 });
 
+regoTradeInfoRouter.get('/me', async (req, res) => {
+  const {
+    buyingApplicationAccountName,
+    identificationNumber,
+    electricityProductionPeriod,
+    tradingApplicationStatus,
+  } = req.query as GetRegoTradeInfoRequestDto;
+  // @ts-expect-error
+  const { providerId, consumerId } = req.decoded;
+
+  const connection = await getConnection();
+
+  try {
+    let query = `
+  SELECT 
+    rti.REGO_TRADE_INFO_ID,
+    p.ACCOUNT_NAME AS SELLER_ACCOUNT_NAME,
+    c.CORPORATION_NAME AS BUYER_ACCOUNT_NAME,                      
+    rti.IDENTIFICATION_NUMBER as IDENTIFICATION_NUMBER,
+    pl.PLANT_NAME AS PLANT_NAME,               
+    pl.GENERATION_PURPOSE AS PLANT_TYPE,
+    pl.ENERGY_SOURCE AS ENERGY_SOURCE,
+    pl.LOCATION AS LOCATION,
+    pl.INSPECTION_DATE_BEFORE_USAGE AS INSPECTION_DATE_BEFORE_USAGE,
+    rg.ELECTRICITY_PRODUCTION_PERIOD AS ELECTRICITY_PRODUCTION_PERIOD, 
+    rg.REMAINING_GENERATION_AMOUNT AS REMAINING_GENERATION_AMOUNT,    
+    rg.ISSUED_DATE AS ISSUED_DATE,
+    rg.TRANSACTION_REGISTRATION_DATE,
+    rti.BUYING_AMOUNT AS BUYING_AMOUNT,    
+    rti.BUYING_PRICE,
+    (rti.BUYING_AMOUNT * rti.BUYING_PRICE) AS TOTAL_PRICE, 
+    rti.BUYING_APPLICATION_DATE AS BUYING_APPLICATION_DATE,
+    rti.TRADE_COMPLETED_DATE AS TRADE_COMPLETED_DATE,
+    rti.REJECTED_REASON AS REJECTED_REASON
+  FROM 
+    REGO.REGO_TRADE_INFO rti
+    INNER JOIN REGO.PROVIDER p ON rti.PROVIDER_ID = p.PROVIDER_ID
+    INNER JOIN REGO.CONSUMER c ON rti.CONSUMER_ID = c.CONSUMER_ID
+    INNER JOIN REGO.PLANT pl ON rti.PLANT_ID = pl.PLANT_ID
+    INNER JOIN REGO.REGO_GROUP rg ON rti.REGO_GROUP_ID = rg.REGO_GROUP_ID
+  WHERE 1 = 1
+`;
+
+    // 조건문 배열
+    const conditions = [];
+    const parameters = [];
+
+    // 각 필터 조건 추가
+    if (buyingApplicationAccountName) {
+      conditions.push('c.CORPORATION_NAME LIKE :buyingApplicationAccountName');
+      parameters.push(`%${buyingApplicationAccountName}%`);
+    }
+
+    if (identificationNumber) {
+      conditions.push('rti.IDENTIFICATION_NUMBER LIKE :identificationNumber');
+      parameters.push(`%${identificationNumber}%`);
+    }
+
+    if (electricityProductionPeriod) {
+      conditions.push(
+        'rg.ELECTRICITY_PRODUCTION_PERIOD LIKE :electricityProductionPeriod'
+      );
+      parameters.push(`%${electricityProductionPeriod}%`);
+    }
+
+    if (tradingApplicationStatus) {
+      conditions.push(
+        'rti.TRADING_APPLICATION_STATUS = :tradingApplicationStatus'
+      );
+      parameters.push(tradingApplicationStatus);
+    }
+
+    if (providerId) {
+      conditions.push('rti.PROVIDER_ID = :providerId');
+      parameters.push(providerId);
+    }
+
+    if (consumerId) {
+      conditions.push('rti.CONSUMER_ID = :consumerId');
+      parameters.push(consumerId);
+    }
+
+    // 조건이 있을 경우 쿼리에 추가
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    const result = await connection.execute(query, parameters, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+
+    res.json({
+      success: true,
+      data: convertToCamelCase(result.rows as any[]).sort((a, b) => {
+        if (
+          tradingApplicationStatus === TradingApplicationStatus.Pending ||
+          tradingApplicationStatus === TradingApplicationStatus.Rejected
+        ) {
+          return b.buyingApplicationDate - a.buyingApplicationDate;
+        }
+
+        if (tradingApplicationStatus === TradingApplicationStatus.Approve) {
+          return b.tradeCompletedDate - a.tradeCompletedDate;
+        }
+
+        if (tradingApplicationStatus === TradingApplicationStatus.Canceled) {
+          return b.tradeCompletedDate - a.tradeCompletedDate;
+        }
+
+        return b.buyingApplicationDate - a.buyingApplicationDate;
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      error,
+    });
+  } finally {
+    await connection.close();
+  }
+});
+
 regoTradeInfoRouter.get('/electricity-production-period', async (req, res) => {
   // @ts-ignore
   const { decoded } = req;
