@@ -9,7 +9,7 @@
     "build:prod": "rm -rf dist && npx tsc",
     "start:local": "env-cmd -f env/.env.local pm2 start pm2.config.js",
     "start:dev": "env-cmd -f env/.env.dev pm2 start pm2.config.js",
-    "start:prod": "env-cmd -f env/.prod.dev pm2 start pm2.config.js",
+    "start:prod": "env-cmd -f env/.env.prod pm2 start pm2.config.js",
     "dev": "env-cmd -f env/.env.local nodemon --watch 'src/**/*.ts' --exec 'ts-node' app.ts"
   },
   "keywords": [],
