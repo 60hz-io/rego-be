@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { getConnection } from '../../app-data-source';
 import { ProviderSignUpRequestDto } from '../dto/provider-sign-up-request.dto';
 import { ConsumerSignUpRequestDto } from '../dto/consumer-sign-up-request.dto';
+import { auth } from '../../middleware/jwt-token';
 
 const randomBytesPromise = util.promisify(crypto.randomBytes);
 const pbkdf2Promise = util.promisify(crypto.pbkdf2);
@@ -20,6 +21,12 @@ type LoginRequestDto = {
   id: string;
   password: string;
 };
+
+authRouter.get('/check', auth, async (req, res) => {
+  res.send({
+    success: true,
+  });
+});
 
 authRouter.post('/provider/login', async (req, res) => {
   const connection = await getConnection();
