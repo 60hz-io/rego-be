@@ -61,7 +61,7 @@ powerGenerationRouter.get('/', async (req, res) => {
             pg.ELECTRICITY_PRODUCTION_PERIOD AS "electricityProductionPeriod",
             pg.POWER_GENERATION_AMOUNT AS "powerGenerationAmount",
             pg.ISSUED_STATUS AS "issuedStatus",
-            pg.INFO_COLLECTION_DATE AS "issuedDate",
+            pg.ISSUED_DATE AS "issuedDate",
             (TO_NUMBER(p.SELF_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "selfSupplyPriceRate",
             (TO_NUMBER(p.NATION_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "nationSupplyPriceRate",
             (TO_NUMBER(p.LOCAL_GOVERNMENT_SUPPLY_PRICE) / TO_NUMBER(p.SELF_SUPPLY_PRICE + p.NATION_SUPPLY_PRICE + p.LOCAL_GOVERNMENT_SUPPLY_PRICE)) * 100 AS "localGovernmentSupplyPriceRate"
