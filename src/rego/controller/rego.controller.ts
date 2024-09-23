@@ -655,8 +655,8 @@ regoRouter.post('/issue', async (req, res) => {
 
     for await (const issueRego of issuedRegoList) {
       await connection.execute(
-        "UPDATE POWER_GENERATION SET ISSUED_STATUS = 'y' WHERE POWER_GENERATION_ID = :0",
-        [issueRego.id]
+        "UPDATE POWER_GENERATION SET ISSUED_STATUS = 'y', ISSUED_DATE = :0 WHERE POWER_GENERATION_ID = :1",
+        [new Date(), issueRego.id]
       );
     }
 
@@ -717,7 +717,8 @@ regoRouter.post('/issue', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    connection.rollback();
+    await connection.rollback();
+
     res.json({ success: false, error });
   } finally {
     await connection.close();
