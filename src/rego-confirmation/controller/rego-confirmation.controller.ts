@@ -134,7 +134,9 @@ WHERE rc.CONSUMER_ID = :0
 
     res.json({
       success: true,
-      data: camelResult,
+      data: camelResult.sort(
+        (a, b) => b.regoConfirmationId - a.regoConfirmationId
+      ),
     });
   } catch (error) {
     console.error(error);
