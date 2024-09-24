@@ -168,7 +168,9 @@ regoTradeInfoRouter.get('/me', async (req, res) => {
     (rti.BUYING_AMOUNT * rti.BUYING_PRICE) AS TOTAL_PRICE, 
     rti.BUYING_APPLICATION_DATE AS BUYING_APPLICATION_DATE,
     rti.TRADE_COMPLETED_DATE AS TRADE_COMPLETED_DATE,
-    rti.REJECTED_REASON AS REJECTED_REASON
+    rti.REJECTED_REASON AS REJECTED_REASON,
+    rti.IDENTIFICATION_START_NUMBER,
+    rti.IDENTIFICATION_END_NUMBER
   FROM 
     REGO.REGO_TRADE_INFO rti
     INNER JOIN REGO.PROVIDER p ON rti.PROVIDER_ID = p.PROVIDER_ID
@@ -454,13 +456,6 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       });
     }
 
-    // 거래 진행 상태 변경
-    await connection.execute(
-      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve', TRADE_COMPLETED_DATE = :0 
-          WHERE REGO_TRADE_INFO_ID = :1`,
-      [new Date(), regoTradeInfoId]
-    );
-
     // REGO_GROUP 거래 상태, 잔여량 변경
     const remainingGenerationAmount =
       Number(camelRegoGroupResult.remainingGenerationAmount) -
@@ -471,6 +466,13 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       remainingGenerationAmount === 0
         ? RegoTradingStatus.End
         : RegoTradingStatus.Trading;
+    const startNumber =
+      camelRegoGroupResult.issuedGenerationAmount -
+      camelRegoGroupResult.remainingGenerationAmount;
+
+    const identificationStartNumber = startNumber + 1;
+    const identificationEndNumber =
+      startNumber + camelRegoGroupResult.buyingAmount;
 
     await connection.execute(
       `UPDATE REGO_GROUP SET REMAINING_GENERATION_AMOUNT = :0, STATUS = :1, TRADING_STATUS = :2 
@@ -483,10 +485,21 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       ]
     );
 
+    // 거래 진행 상태 변경
+    await connection.execute(
+      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve', 
+                                  TRADE_COMPLETED_DATE = :0, IDENTIFICATION_START_NUMBER = :1,
+                                  IDENTIFICATION_END_NUMBER = :2
+            WHERE REGO_TRADE_INFO_ID = :3`,
+      [
+        new Date(),
+        identificationStartNumber,
+        identificationEndNumber,
+        regoTradeInfoId,
+      ]
+    );
+
     // buying_rego 테이블에 insert
-    const startNumber =
-      camelRegoGroupResult.issuedGenerationAmount -
-      camelRegoGroupResult.remainingGenerationAmount;
 
     await connection.execute(
       `
@@ -500,8 +513,8 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
         camelRegoGroupResult.buyingAmount,
         camelRegoGroupResult.identificationNumber,
         RegoStatus.Active,
-        startNumber + 1,
-        startNumber + camelRegoGroupResult.buyingAmount,
+        identificationStartNumber,
+        identificationEndNumber,
       ]
     );
 
