@@ -288,6 +288,22 @@ regoRouter.post('/sell', async (req, res) => {
   }
 });
 
+function compareByElectricityProductionPeriodAscending(
+  a: { electricityProductionPeriod: string },
+  b: { electricityProductionPeriod: string }
+): number {
+  const [yearA, monthA] = a.electricityProductionPeriod.split('-').map(Number);
+  const [yearB, monthB] = b.electricityProductionPeriod.split('-').map(Number);
+
+  // 연도를 비교 (오름차순)
+  if (yearA !== yearB) {
+    return yearA - yearB;
+  }
+
+  // 연도가 같으면 월을 비교 (오름차순)
+  return monthA - monthB;
+}
+
 regoRouter.post('/issue', async (req, res) => {
   const { issuedRegoList } = req.body as RegoIssueRequestDto;
   // @ts-ignore
@@ -300,6 +316,10 @@ regoRouter.post('/issue', async (req, res) => {
     });
   }
   const connection = await getConnection();
+
+  const issuedRegoListSortedByElectricityProductionPeriod = issuedRegoList.sort(
+    compareByElectricityProductionPeriodAscending
+  );
 
   try {
     const plantId = issuedRegoList[0].plantId;
@@ -368,7 +388,6 @@ regoRouter.post('/issue', async (req, res) => {
     const nationCarriedOverPowerGenAmount = (
       nationProviderResult?.rows as any[]
     )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
-
     const localCarriedOverPowerGenAmount = (
       localGovernmentProviderResult?.rows as any[]
     )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
@@ -378,14 +397,19 @@ regoRouter.post('/issue', async (req, res) => {
     const 국가_고유_식별번호_묶음: string[] = [];
     const 지자체_고유_식별번호_묶음: string[] = [];
 
-    // 이월 잔여량
-    let 소유주_이월_잔여량 = 0;
-    let 국가_이월_잔여량 = 0;
-    let 지자체_이월_잔여량 = 0;
+    // 발전량에서 분리된 소수점들의 총합
+    let 소유주_소수점_총합 = selfCarriedOverPowerGenAmount;
+    let 국가_소수점_총합 = nationCarriedOverPowerGenAmount;
+    let 지자체_소수점_총합 = localCarriedOverPowerGenAmount;
 
     // 발전량에 대해서 발급 상태 검증
-    for (let i = 0; i < issuedRegoList.length; i += 1) {
-      const { id: powerGenerationId } = issuedRegoList[i];
+    for (
+      let i = 0;
+      i < issuedRegoListSortedByElectricityProductionPeriod.length;
+      i += 1
+    ) {
+      const { id: powerGenerationId } =
+        issuedRegoListSortedByElectricityProductionPeriod[i];
 
       const regoGroup = await connection.execute(
         `
@@ -445,11 +469,6 @@ regoRouter.post('/issue', async (req, res) => {
       const issuedDate = dayjs().toDate();
       const expiredDate = dayjs().add(3, 'year').toDate();
 
-      // 발전량에서 분리된 소수점들의 총합
-      let 소유주_소수점_총합 = 0;
-      let 국가_소수점_총합 = 0;
-      let 지자체_소수점_총합 = 0;
-
       // DB에 저장될 발급 발전량
       let 최종_소유주_발급량 = 0;
       let 최종_국가_발급량 = 0;
@@ -469,100 +488,66 @@ regoRouter.post('/issue', async (req, res) => {
       const [소유주_발전량_정수, 소유주_발전량_소수] =
         String(소유주_발전량).split('.');
 
-      소유주_소수점_총합 += Number(
-        formatNumberToThreeDecimals(
-          convertToDecimal(Number(소유주_발전량_소수))
-        )
-      );
+      소유주_소수점_총합 += Number(convertToDecimal(소유주_발전량_소수));
 
       const [국가_발전량_정수, 국가_발전량_소수] =
         String(국가_발전량).split('.');
 
-      국가_소수점_총합 += Number(
-        formatNumberToThreeDecimals(convertToDecimal(Number(국가_발전량_소수)))
-      );
+      국가_소수점_총합 += Number(convertToDecimal(국가_발전량_소수));
 
       const [지자체_발전량_정수, 지자체_발전량_소수] =
         String(지자체_발전량).split('.');
 
-      지자체_소수점_총합 += Number(
-        formatNumberToThreeDecimals(
-          convertToDecimal(Number(지자체_발전량_소수))
-        )
-      );
+      지자체_소수점_총합 += Number(convertToDecimal(지자체_발전량_소수));
 
-      // 마지막 REGO 발급하는 시기를 체크, 소수점 + 이월 발전량을 더하기 위함
-      if (i === issuedRegoList.length - 1) {
-        // 발전량의 소수점 값 + 이월 발전량
-        소유주_소수점_총합 += selfCarriedOverPowerGenAmount;
+      console.log(소유주_소수점_총합);
+      if (
+        Math.trunc(Number(소유주_발전량_정수) + 소유주_소수점_총합) >
+        Math.trunc(Number(소유주_발전량_정수))
+      ) {
+        최종_소유주_발급량 = Math.trunc(
+          Number(소유주_발전량_정수) + 소유주_소수점_총합
+        );
 
-        if (
-          Math.trunc(Number(소유주_발전량_정수) + 소유주_소수점_총합) >
-          Math.trunc(Number(소유주_발전량_정수))
-        ) {
-          최종_소유주_발급량 = Math.trunc(
-            Number(소유주_발전량_정수) + 소유주_소수점_총합
-          );
+        const [, decimal] = String(
+          Number(소유주_발전량_정수) + 소유주_소수점_총합
+        ).split('.');
 
-          const [, decimal] = String(
-            Number(소유주_발전량_정수) + 소유주_소수점_총합
-          ).split('.');
-
-          소유주_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
-        } else {
-          최종_소유주_발급량 = Number(소유주_발전량_정수);
-          소유주_이월_잔여량 = 소유주_소수점_총합;
-        }
+        소유주_소수점_총합 = Number(convertToDecimal(decimal));
       } else {
         최종_소유주_발급량 = Number(소유주_발전량_정수);
       }
 
-      if (i === issuedRegoList.length - 1) {
-        // 발전량의 소수점 값 + 이월 발전량
-        국가_소수점_총합 += nationCarriedOverPowerGenAmount;
+      if (
+        Math.trunc(Number(국가_발전량_정수) + 국가_소수점_총합) >
+        Math.trunc(Number(국가_발전량_정수))
+      ) {
+        최종_국가_발급량 = Math.trunc(
+          Number(국가_발전량_정수) + 국가_소수점_총합
+        );
 
-        if (
-          Math.trunc(Number(국가_발전량_정수) + 국가_소수점_총합) >
-          Math.trunc(Number(국가_발전량_정수))
-        ) {
-          최종_국가_발급량 = Math.trunc(
-            Number(국가_발전량_정수) + 국가_소수점_총합
-          );
+        const [, decimal] = String(
+          Number(국가_발전량_정수) + 국가_소수점_총합
+        ).split('.');
 
-          const [, decimal] = String(
-            Number(국가_발전량_정수) + 국가_소수점_총합
-          ).split('.');
-
-          국가_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
-        } else {
-          최종_국가_발급량 = Number(국가_발전량_정수);
-          국가_이월_잔여량 = 국가_소수점_총합;
-        }
+        국가_소수점_총합 = Number(convertToDecimal(decimal));
       } else {
         최종_국가_발급량 = Number(국가_발전량_정수);
       }
 
-      if (i === issuedRegoList.length - 1) {
-        // 발전량의 소수점 값 + 이월 발전량
-        지자체_소수점_총합 += localCarriedOverPowerGenAmount;
+      if (
+        Math.trunc(Number(지자체_발전량_정수) + 지자체_소수점_총합) >
+        Math.trunc(Number(지자체_발전량_정수))
+      ) {
+        최종_지자체_발급량 = Math.trunc(
+          Number(지자체_발전량_정수) + 지자체_소수점_총합
+        );
 
-        if (
-          Math.trunc(Number(지자체_발전량_정수) + 지자체_소수점_총합) >
-          Math.trunc(Number(지자체_발전량_정수))
-        ) {
-          최종_지자체_발급량 = Math.trunc(
-            Number(지자체_발전량_정수) + 지자체_소수점_총합
-          );
+        const [, decimal] = String(
+          Number(지자체_발전량_정수) + 지자체_소수점_총합
+        ).split('.');
 
-          const [, decimal] = String(
-            Number(지자체_발전량_정수) + 지자체_소수점_총합
-          ).split('.');
-
-          지자체_이월_잔여량 = Number(convertToDecimal(Number(decimal)));
-        } else {
-          최종_지자체_발급량 = Number(지자체_발전량_정수);
-          지자체_이월_잔여량 = 지자체_소수점_총합;
-        }
+        지자체_소수점_총합 = Number(convertToDecimal(decimal));
       } else {
         최종_지자체_발급량 = Number(지자체_발전량_정수);
       }
@@ -610,35 +595,34 @@ regoRouter.post('/issue', async (req, res) => {
       ];
 
       regoGroupTableInsertData.push(소유주_배열, 국가_배열, 지자체_배열);
-
-      // 여기서 데이터 만들어서 배열에 push (bulk insert 용도)
     }
 
-    if (Number(소유주_이월_잔여량) >= 0) {
+    console.log(소유주_소수점_총합);
+    if (Number(소유주_소수점_총합) >= 0) {
       await connection.execute(
         `
           UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
         `,
-        [소유주_이월_잔여량, decoded?.providerId]
+        [소유주_소수점_총합, decoded?.providerId]
       );
     }
-    if (Number(국가_이월_잔여량) >= 0) {
+    if (Number(국가_소수점_총합) >= 0) {
       await connection.execute(
         `
           UPDATE PROVIDER 
             SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 
             WHERE ACCOUNT_TYPE = 'nation'
         `,
-        [국가_이월_잔여량]
+        [국가_소수점_총합]
       );
     }
-    if (Number(지자체_이월_잔여량) >= 0) {
+    if (Number(지자체_소수점_총합) >= 0) {
       await connection.execute(
         `
           UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
         `,
         [
-          지자체_이월_잔여량,
+          지자체_소수점_총합,
           (localGovernmentProviderResult?.rows as any)[0].PROVIDER_ID,
         ]
       );
@@ -738,6 +722,6 @@ function generateUniqueId(length = 8) {
   return result;
 }
 
-function convertToDecimal(value: number) {
-  return Number(`0.${value}`);
+function convertToDecimal(value: number | string) {
+  return `0.${value}`;
 }
