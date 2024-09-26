@@ -403,6 +403,7 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       `
         SELECT * FROM REGO_TRADE_INFO 
           WHERE REGO_TRADE_INFO_ID = :0
+          FOR UPDATE
       `,
       [regoTradeInfoId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
