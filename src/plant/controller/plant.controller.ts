@@ -17,6 +17,7 @@ plantRouter.get('/', async (req, res) => {
       `SELECT p.*, pr.REPRESENTATIVE_NAME, pr.REPRESENTATIVE_PHONE 
          FROM PLANT p INNER JOIN PROVIDER pr ON pr.PROVIDER_ID = p.PROVIDER_ID
          WHERE p.PROVIDER_ID = :0
+         ORDER BY PLANT_ID ASC
          `,
       [providerId],
       {
