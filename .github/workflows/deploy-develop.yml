@@ -1,0 +1,39 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
+
+name: 개발서버 배포
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.DEVELOP_HOST }}
+        username: ${{ secrets.DEVELOP_USERNAME }}
+        password: ${{ secrets.DEVELOP_PASSWORD }}
+        port: ${{ secrets.DEVELOP_PORT }}
+        script: |
+          cd /home/be-dev/rego-be
+          sudo git pull
+
+          sudo bash -c '
+            export PATH=/home/be-dev/node-v11.15.0-linux-x64/bin:$PATH;
+            export LD_LIBRARY_PATH=/home/be-dev/rego-be/oracle-client:$LD_LIBRARY_PATH;
+            pm2 stop dist/app.js &&
+            npm i &&
+            npm run build &&
+            npm run start:dev
+          '
