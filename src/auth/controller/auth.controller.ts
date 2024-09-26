@@ -275,7 +275,7 @@ authRouter.post('/consumer/login', async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 

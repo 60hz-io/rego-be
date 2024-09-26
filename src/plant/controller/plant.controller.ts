@@ -38,7 +38,7 @@ plantRouter.get('/', async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -69,7 +69,7 @@ plantRouter.get('/:plantId', async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });
 
@@ -122,7 +122,7 @@ plantRouter.put('/:plantId', async (req, res) => {
       ]
     );
 
-    connection.commit();
+    await connection.commit();
 
     res.json({
       success: true,
@@ -130,11 +130,12 @@ plantRouter.put('/:plantId', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    await connection.rollback();
     res.json({
       success: false,
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });

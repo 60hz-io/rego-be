@@ -124,6 +124,7 @@ providerRouter.get('/carried-over-power-gen-amount', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    await connection.rollback();
     res.json({
       success: false,
       message: '에러가 발생했습니다.',

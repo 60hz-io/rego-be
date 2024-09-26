@@ -270,8 +270,7 @@ regoRouter.post('/sell', async (req, res) => {
       );
     }
 
-    connection.commit();
-    await connection.close();
+    await connection.commit();
 
     res.json({
       success: true,
@@ -279,6 +278,7 @@ regoRouter.post('/sell', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    await connection.rollback();
     res.json({
       success: false,
       error,

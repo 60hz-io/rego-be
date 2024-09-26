@@ -43,6 +43,6 @@ consumerRouter.get('/', async (req, res) => {
       error,
     });
   } finally {
-    connection.close();
+    await connection.close();
   }
 });

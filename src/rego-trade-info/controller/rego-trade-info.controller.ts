@@ -352,41 +352,53 @@ regoTradeInfoRouter.post('/refuse', async (req, res) => {
 
   const connection = await getConnection();
 
-  const regoTradeInfo = await connection.execute(
-    'SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
-    [regoTradeInfoId],
-    {
-      outFormat: oracledb.OUT_FORMAT_OBJECT,
+  try {
+    const regoTradeInfo = await connection.execute(
+      'SELECT TRADING_APPLICATION_STATUS FROM REGO_TRADE_INFO WHERE REGO_TRADE_INFO_ID = :0',
+      [regoTradeInfoId],
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      }
+    );
+
+    const camelRegoTradeInfo = convertToCamelCase(
+      regoTradeInfo.rows as any[]
+    )[0];
+
+    if (
+      camelRegoTradeInfo.tradingApplicationStatus !==
+      TradingApplicationStatus.Pending
+    ) {
+      return res.json({
+        success: false,
+        message: '이미 처리가 완료된 거래입니다.',
+      });
     }
-  );
 
-  const camelRegoTradeInfo = convertToCamelCase(regoTradeInfo.rows as any[])[0];
-
-  if (
-    camelRegoTradeInfo.tradingApplicationStatus !==
-    TradingApplicationStatus.Pending
-  ) {
-    return res.json({
-      success: false,
-      message: '이미 처리가 완료된 거래입니다.',
-    });
-  }
-
-  const result = await connection.execute(
-    `UPDATE REGO_TRADE_INFO SET TRADE_COMPLETED_DATE = :0, 
+    const result = await connection.execute(
+      `UPDATE REGO_TRADE_INFO SET TRADE_COMPLETED_DATE = :0, 
                                 TRADING_APPLICATION_STATUS = 'rejected', 
                                 REJECTED_REASON = :1  
                             WHERE REGO_TRADE_INFO_ID = :2`,
-    [new Date(), rejectedReason, regoTradeInfoId],
-    { autoCommit: true }
-  );
+      [new Date(), rejectedReason, regoTradeInfoId],
+      { autoCommit: true }
+    );
 
-  await connection.commit();
+    await connection.commit();
 
-  res.json({
-    success: true,
-    message: 'REGO 거래 거절을 완료했습니다.',
-  });
+    res.json({
+      success: true,
+      message: 'REGO 거래 거절을 완료했습니다.',
+    });
+  } catch (error) {
+    console.error(error);
+    await connection.rollback();
+    res.json({
+      success: false,
+    });
+  } finally {
+    await connection.close();
+  }
 });
 
 type PostRegoTradeInfoAcceptRequestDto = {
@@ -511,20 +523,6 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       ]
     );
 
-    // 거래 진행 상태 변경
-    await connection.execute(
-      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve', 
-                                  TRADE_COMPLETED_DATE = :0, IDENTIFICATION_START_NUMBER = :1,
-                                  IDENTIFICATION_END_NUMBER = :2
-            WHERE REGO_TRADE_INFO_ID = :3`,
-      [
-        new Date(),
-        identificationStartNumber,
-        identificationEndNumber,
-        regoTradeInfoId,
-      ]
-    );
-
     // buying_rego 테이블에 insert
 
     await connection.execute(
@@ -562,7 +560,21 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
       );
     }
 
-    connection.commit();
+    // 거래 진행 상태 변경
+    await connection.execute(
+      `UPDATE REGO_TRADE_INFO SET TRADING_APPLICATION_STATUS = 'approve', 
+                                      TRADE_COMPLETED_DATE = :0, IDENTIFICATION_START_NUMBER = :1,
+                                      IDENTIFICATION_END_NUMBER = :2
+                WHERE REGO_TRADE_INFO_ID = :3`,
+      [
+        new Date(),
+        identificationStartNumber,
+        identificationEndNumber,
+        regoTradeInfoId,
+      ]
+    );
+
+    await connection.commit();
 
     res.json({
       success: true,
@@ -570,7 +582,7 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    connection.rollback();
+    await connection.rollback();
     res.json({
       success: false,
       error,
@@ -644,7 +656,7 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
         new Date(),
       ]
     );
-    connection.commit();
+    await connection.commit();
 
     res.json({
       success: true,
@@ -652,6 +664,7 @@ regoTradeInfoRouter.post('/buying', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    await connection.rollback();
     res.json({
       success: false,
       error,
@@ -704,6 +717,7 @@ regoTradeInfoRouter.put('/cancel', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    await connection.rollback();
     res.json({
       success: false,
       error,

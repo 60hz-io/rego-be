@@ -308,7 +308,7 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
       }
     }
 
-    connection.commit();
+    await connection.commit();
 
     res.json({
       success: true,
@@ -319,6 +319,7 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    connection.rollback();
     res.json({
       success: false,
       error,
