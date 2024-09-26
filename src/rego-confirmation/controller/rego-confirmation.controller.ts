@@ -172,6 +172,14 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
       );
       const buyingRego = buyingRegoResult.rows?.[0] as any;
 
+      if (Number(buyingRego.CONSUMER_ID) !== Number(consumerId)) {
+        res.json({
+          success: false,
+          message: `보유한 REGO 목록이 아닙니다.\nREGO 상태를 다시 확인해주세요.`,
+        });
+        return;
+      }
+
       if (buyingRego.REGO_STATUS !== RegoStatus.Active) {
         res.json({
           success: false,

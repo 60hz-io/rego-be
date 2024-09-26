@@ -500,7 +500,6 @@ regoRouter.post('/issue', async (req, res) => {
 
       지자체_소수점_총합 += Number(convertToDecimal(지자체_발전량_소수));
 
-      console.log(소유주_소수점_총합);
       if (
         Math.trunc(Number(소유주_발전량_정수) + 소유주_소수점_총합) >
         Math.trunc(Number(소유주_발전량_정수))
@@ -597,7 +596,6 @@ regoRouter.post('/issue', async (req, res) => {
       regoGroupTableInsertData.push(소유주_배열, 국가_배열, 지자체_배열);
     }
 
-    console.log(소유주_소수점_총합);
     if (Number(소유주_소수점_총합) >= 0) {
       await connection.execute(
         `
