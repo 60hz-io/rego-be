@@ -399,6 +399,31 @@ regoTradeInfoRouter.post('/accept', async (req, res) => {
   const connection = await getConnection();
 
   try {
+    const regoTradeInfoResult = await connection.execute(
+      `
+        SELECT * FROM REGO_TRADE_INFO 
+          WHERE REGO_TRADE_INFO_ID = :0
+      `,
+      [regoTradeInfoId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const camelRegoTradeInfoResult = convertToCamelCase(
+      regoTradeInfoResult?.rows as any[]
+    )[0];
+
+    if (
+      camelRegoTradeInfoResult.tradingApplicationStatus !==
+      TradingApplicationStatus.Pending
+    ) {
+      return res.json({
+        success: false,
+        message: {
+          title: 'REGO 거래 불가',
+          content: `이미 거래가 진행된 REGO 입니다.\n다른 REGO를 선택해주세요.`,
+        },
+      });
+    }
+
     const regoGroupResult = await connection.execute(
       `
         SELECT rg.REGO_GROUP_ID, rg.STATUS, rg.TRADING_STATUS, rg.ISSUED_GENERATION_AMOUNT, 
