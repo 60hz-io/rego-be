@@ -21,7 +21,7 @@ import { providerRouter } from './src/provider/provider.controller';
 function init() {
   try {
     const API_ENDPOINT_PREFIX = '/api/rego';
-    const PORT = 9090;
+    const PORT = 9092;
 
     const app = express();
     app.use(cors());
