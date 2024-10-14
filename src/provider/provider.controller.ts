@@ -17,6 +17,7 @@ providerRouter.get('/', async (req, res) => {
       `
         SELECT 
          CARRIED_OVER_POWER_GEN_AMOUNT,
+         ACCOUNT_NAME,
          IS_FIRST_LOGIN
          FROM PROVIDER WHERE PROVIDER_ID = :0
       `,
