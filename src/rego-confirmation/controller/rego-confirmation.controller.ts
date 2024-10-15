@@ -4,6 +4,7 @@ import oracledb from 'oracledb';
 import { getConnection } from '../../app-data-source';
 import { RegoStatus } from '../../rego/controller/rego.controller';
 import { convertToCamelCase } from '../../utils/convertToCamelCase';
+import dayjs from 'dayjs';
 
 export const regoConfirmationRouter = express.Router();
 
@@ -218,6 +219,18 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
         id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
       },
       { autoCommit: true }
+    );
+
+    const id = (confirmationResult.outBinds as any).id?.[0];
+    const now = dayjs().format('YYYY-MM-DD');
+    const confirmationNumber = `P-${now}-${String(id).padStart(4, '0')}`;
+
+    await connection.execute(
+      `
+        UPDATE REGO_CONFIRMATION SET CONFIRMATION_NUMBER = :0
+          WHERE REGO_CONFIRMATION_ID = :1
+      `,
+      [confirmationNumber, id]
     );
 
     for await (const selectedRego of selectedRegos) {
