@@ -105,6 +105,7 @@ SELECT DISTINCT
      WHERE pg.PLANT_ID = p.PLANT_ID) AS ELECTRICITY_PRODUCTION_PERIOD, -- 가장 최신 발전 기간만 가져옴
     p.plant_name,
     p.location,
+    p.PLANT_CODE,
     p.INSPECTION_DATE_BEFORE_USAGE
 FROM
     REGO_CONFIRMATION rc
