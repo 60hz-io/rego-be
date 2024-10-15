@@ -372,7 +372,7 @@ regoRouter.post('/issue', async (req, res) => {
       ),
       connection.execute(
         `
-          SELECT p.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID FROM PLANT pl
+          SELECT p.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID, pl.PLANT_CODE FROM PLANT pl
             INNER JOIN PROVIDER p ON pl.REGION_ID = p.REGION_ID
             WHERE pl.PLANT_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment'
             FOR UPDATE
@@ -433,13 +433,17 @@ regoRouter.post('/issue', async (req, res) => {
         });
       }
 
+      console.log(localGovernmentProviderResult?.rows);
+
+      const plantCode = (localGovernmentProviderResult?.rows as any[])[0]
+        .PLANT_CODE;
       // 고유 아이디를 만듭니다.
-      let 소유주_고유_식별번호: string;
-      let 국가_고유_식별번호: string;
-      let 지자체_고유_식별번호: string;
+      let 소유주_고유_식별번호 = plantCode;
+      let 국가_고유_식별번호 = plantCode;
+      let 지자체_고유_식별번호 = plantCode;
 
       while (true) {
-        소유주_고유_식별번호 = generateUniqueId();
+        소유주_고유_식별번호 = `${소유주_고유_식별번호}-${generateUniqueId()}`;
 
         if (!소유주_고유_식별번호_묶음.includes(소유주_고유_식별번호)) {
           소유주_고유_식별번호_묶음.push(소유주_고유_식별번호);
@@ -447,7 +451,7 @@ regoRouter.post('/issue', async (req, res) => {
         }
       }
       while (true) {
-        국가_고유_식별번호 = generateUniqueId();
+        국가_고유_식별번호 = `${국가_고유_식별번호}-${generateUniqueId()}`;
 
         if (!국가_고유_식별번호_묶음.includes(국가_고유_식별번호)) {
           국가_고유_식별번호_묶음.push(국가_고유_식별번호);
@@ -455,7 +459,7 @@ regoRouter.post('/issue', async (req, res) => {
         }
       }
       while (true) {
-        지자체_고유_식별번호 = generateUniqueId();
+        지자체_고유_식별번호 = `${지자체_고유_식별번호}-${generateUniqueId()}`;
 
         if (!지자체_고유_식별번호_묶음.includes(지자체_고유_식별번호)) {
           지자체_고유_식별번호_묶음.push(지자체_고유_식별번호);
@@ -707,8 +711,8 @@ regoRouter.post('/issue', async (req, res) => {
   }
 });
 
-function generateUniqueId(length = 8) {
-  const RANDOM_CHAR = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function generateUniqueId(length = 4) {
+  const RANDOM_CHAR = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
   let result = '';
 

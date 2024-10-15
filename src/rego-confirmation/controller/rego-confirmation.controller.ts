@@ -222,9 +222,12 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
       { autoCommit: true }
     );
 
+    const REGO_CONFIRMATION_UNIQUE_NUMBER = '05';
     const id = (confirmationResult.outBinds as any).id?.[0];
-    const now = dayjs().format('YYYY-MM-DD');
-    const confirmationNumber = `P-${now}-${String(id).padStart(4, '0')}`;
+    const now = dayjs().format('YYYY-MM');
+    const confirmationNumber = `P-${now}-${REGO_CONFIRMATION_UNIQUE_NUMBER}-${String(
+      id
+    ).padStart(4, '0')}`;
 
     await connection.execute(
       `
