@@ -433,8 +433,6 @@ regoRouter.post('/issue', async (req, res) => {
         });
       }
 
-      console.log(localGovernmentProviderResult?.rows);
-
       const plantCode = (localGovernmentProviderResult?.rows as any[])[0]
         .PLANT_CODE;
       // 고유 아이디를 만듭니다.
