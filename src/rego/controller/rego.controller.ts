@@ -326,7 +326,9 @@ regoRouter.post('/issue', async (req, res) => {
 
     const plantResult = await connection.execute(
       `
-        SELECT PROVIDER_ID, REGION_ID, SELF_SUPPLY_PRICE_PERCENT, NATION_SUPPLY_PRICE_PERCENT, LOCAL_GOV_SUPPLY_PRICE_PERCENT
+        SELECT PROVIDER_ID, REGION_ID, SELF_SUPPLY_PRICE_PERCENT, 
+                NATION_SUPPLY_PRICE_PERCENT, LOCAL_GOV_SUPPLY_PRICE_PERCENT, 
+                PLANT_CODE
           FROM PLANT
           WHERE PLANT_ID = :0
       `,
@@ -349,6 +351,7 @@ regoRouter.post('/issue', async (req, res) => {
       localGovSupplyPricePercent,
     } = camelPlantResult;
 
+    // 이월발전량을 구합니다.
     const [
       selfProviderResult,
       nationProviderResult,
@@ -356,41 +359,47 @@ regoRouter.post('/issue', async (req, res) => {
     ] = await Promise.all([
       connection.execute(
         `
-          SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE PROVIDER_ID = :0
-          FOR UPDATE
+          SELECT CARRIED_OVER_POWER_GEN_AMOUNT 
+            FROM PROVIDER_PLANT_CARRIED_AMOUNT 
+            WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
+            FOR UPDATE
         `,
-        [decoded?.providerId],
+        [decoded?.providerId, plantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       ),
       connection.execute(
         `
-          SELECT CARRIED_OVER_POWER_GEN_AMOUNT, PROVIDER_ID FROM PROVIDER
-            WHERE ACCOUNT_TYPE = 'nation' FOR UPDATE
+          SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID 
+            FROM PROVIDER_PLANT_CARRIED_AMOUNT ppca
+            INNER JOIN PROVIDER p ON ppca.PROVIDER_ID = p.PROVIDER_ID
+            WHERE p.ACCOUNT_TYPE = 'nation' 
+            FOR UPDATE
         `,
         [],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       ),
       connection.execute(
         `
-          SELECT p.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID, pl.PLANT_CODE FROM PLANT pl
-            INNER JOIN PROVIDER p ON pl.REGION_ID = p.REGION_ID
-            WHERE pl.PLANT_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment'
-            FOR UPDATE
-        `,
-        [plantId],
+        SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID FROM PROVIDER p
+          INNER JOIN PROVIDER_PLANT_CARRIED_AMOUNT ppca ON p.PROVIDER_ID = ppca.PROVIDER_ID
+          WHERE REGION_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment'
+          FOR UPDATE
+      `,
+        [camelPlantResult.regionId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       ),
     ]);
 
     // 각 재원별 이월 발전량
-    const selfCarriedOverPowerGenAmount = (selfProviderResult?.rows as any[])[0]
-      .CARRIED_OVER_POWER_GEN_AMOUNT;
-    const nationCarriedOverPowerGenAmount = (
-      nationProviderResult?.rows as any[]
-    )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
-    const localCarriedOverPowerGenAmount = (
-      localGovernmentProviderResult?.rows as any[]
-    )[0].CARRIED_OVER_POWER_GEN_AMOUNT;
+    const selfCarriedOverPowerGenAmount =
+      (selfProviderResult?.rows as any[])[0]?.CARRIED_OVER_POWER_GEN_AMOUNT ??
+      0;
+    const nationCarriedOverPowerGenAmount =
+      (nationProviderResult?.rows as any[])[0]?.CARRIED_OVER_POWER_GEN_AMOUNT ??
+      0;
+    const localCarriedOverPowerGenAmount =
+      (localGovernmentProviderResult?.rows as any[])[0]
+        ?.CARRIED_OVER_POWER_GEN_AMOUNT ?? 0;
 
     const regoGroupTableInsertData: any[] = [];
     const 소유주_고유_식별번호_묶음: string[] = [];
@@ -433,8 +442,7 @@ regoRouter.post('/issue', async (req, res) => {
         });
       }
 
-      const plantCode = (localGovernmentProviderResult?.rows as any[])[0]
-        .PLANT_CODE;
+      const plantCode = camelPlantResult.plantCode;
       // 고유 아이디를 만듭니다.
       let 소유주_고유_식별번호 = plantCode;
       let 국가_고유_식별번호 = plantCode;
@@ -567,8 +575,27 @@ regoRouter.post('/issue', async (req, res) => {
         expiredDate,
       ];
 
+      const nationProvider = await connection.execute(
+        `
+          SELECT PROVIDER_ID
+            FROM PROVIDER
+            WHERE ACCOUNT_TYPE = 'nation'
+        `,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      const localGovernmentProvider = await connection.execute(
+        `
+          SELECT PROVIDER_ID
+            FROM PROVIDER
+            WHERE REGION_ID = :0 AND ACCOUNT_TYPE = 'localGovernment'
+        `,
+        [camelPlantResult.regionId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
       const 국가_배열 = [
-        (nationProviderResult?.rows as any)[0].PROVIDER_ID,
+        (nationProvider?.rows as any)[0].PROVIDER_ID,
         plantId,
         powerGenerationId,
         국가_고유_식별번호,
@@ -582,7 +609,7 @@ regoRouter.post('/issue', async (req, res) => {
       ];
 
       const 지자체_배열 = [
-        (localGovernmentProviderResult?.rows as any)[0].PROVIDER_ID,
+        (localGovernmentProvider?.rows as any)[0].PROVIDER_ID,
         plantId,
         powerGenerationId,
         지자체_고유_식별번호,
@@ -599,33 +626,117 @@ regoRouter.post('/issue', async (req, res) => {
     }
 
     if (Number(소유주_소수점_총합) >= 0) {
-      await connection.execute(
+      const isExist = await connection.execute(
         `
-          UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
+          SELECT ID 
+            FROM PROVIDER_PLANT_CARRIED_AMOUNT
+            WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
         `,
-        [소유주_소수점_총합, decoded?.providerId]
+        [decoded?.providerId, plantId]
       );
+      if (isExist.rows?.[0]) {
+        await connection.execute(
+          `UPDATE PROVIDER_PLANT_CARRIED_AMOUNT 
+            SET CARRIED_OVER_POWER_GEN_AMOUNT = :0
+            WHERE PROVIDER_ID = :1 AND PLANT_ID = :2`,
+          [소유주_소수점_총합, decoded?.providerId, plantId]
+        );
+      } else {
+        console.log(645);
+        await connection.execute(
+          `INSERT INTO PROVIDER_PLANT_CARRIED_AMOUNT(PROVIDER_ID, PLANT_ID, CARRIED_OVER_POWER_GEN_AMOUNT) 
+            VALUES(:0, :1, :2)
+          `,
+          [decoded?.providerId, plantId, 소유주_소수점_총합]
+        );
+      }
     }
+    console.log(660);
     if (Number(국가_소수점_총합) >= 0) {
-      await connection.execute(
+      const nationResult = await connection.execute(
         `
-          UPDATE PROVIDER 
-            SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 
+          SELECT PROVIDER_ID FROM PROVIDER
             WHERE ACCOUNT_TYPE = 'nation'
         `,
-        [국가_소수점_총합]
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
+
+      const isExist = await connection.execute(
+        `
+          SELECT ID 
+            FROM PROVIDER_PLANT_CARRIED_AMOUNT
+            WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
+        `,
+        [(nationResult?.rows as any)[0].PROVIDER_ID, plantId]
+      );
+
+      if (isExist.rows?.[0]) {
+        await connection.execute(
+          `UPDATE PROVIDER_PLANT_CARRIED_AMOUNT 
+            SET CARRIED_OVER_POWER_GEN_AMOUNT = :0
+            WHERE PROVIDER_ID = :1 AND PLANT_ID = :2`,
+          [
+            국가_소수점_총합,
+            (nationResult?.rows as any)[0].PROVIDER_ID,
+            plantId,
+          ]
+        );
+      } else {
+        await connection.execute(
+          `INSERT INTO PROVIDER_PLANT_CARRIED_AMOUNT(PROVIDER_ID, PLANT_ID, CARRIED_OVER_POWER_GEN_AMOUNT) 
+            VALUES(:0, :1, :2)
+          `,
+          [
+            (nationResult?.rows as any)[0].PROVIDER_ID,
+            plantId,
+            국가_소수점_총합,
+          ]
+        );
+      }
     }
     if (Number(지자체_소수점_총합) >= 0) {
-      await connection.execute(
+      const localGovernmentResult = await connection.execute(
         `
-          UPDATE PROVIDER SET CARRIED_OVER_POWER_GEN_AMOUNT = :0 WHERE PROVIDER_ID = : 1
+          SELECT PROVIDER_ID FROM PROVIDER
+            WHERE ACCOUNT_TYPE = 'localGovernment' AND REGION_ID = :0
         `,
-        [
-          지자체_소수점_총합,
-          (localGovernmentProviderResult?.rows as any)[0].PROVIDER_ID,
-        ]
+        [camelPlantResult.regionId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
+
+      const isExist = await connection.execute(
+        `
+          SELECT ID 
+            FROM PROVIDER_PLANT_CARRIED_AMOUNT
+            WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
+        `,
+        [(localGovernmentResult?.rows as any)[0].PROVIDER_ID, plantId]
+      );
+
+      if (isExist.rows?.[0]) {
+        await connection.execute(
+          `UPDATE PROVIDER_PLANT_CARRIED_AMOUNT 
+            SET CARRIED_OVER_POWER_GEN_AMOUNT = :0
+            WHERE PROVIDER_ID = :1 AND PLANT_ID = :2`,
+          [
+            지자체_소수점_총합,
+            (localGovernmentResult?.rows as any)[0].PROVIDER_ID,
+            plantId,
+          ]
+        );
+      } else {
+        await connection.execute(
+          `INSERT INTO PROVIDER_PLANT_CARRIED_AMOUNT(PROVIDER_ID, PLANT_ID, CARRIED_OVER_POWER_GEN_AMOUNT)
+            VALUES(:0, :1, :2)
+          `,
+          [
+            (localGovernmentResult?.rows as any)[0].PROVIDER_ID,
+            plantId,
+            지자체_소수점_총합,
+          ]
+        );
+      }
     }
 
     // rego를 만들기 위해 발급량으로 배열을 만든다.

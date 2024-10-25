@@ -16,7 +16,6 @@ providerRouter.get('/', async (req, res) => {
     const provider = await connection.execute(
       `
         SELECT 
-         CARRIED_OVER_POWER_GEN_AMOUNT,
          ACCOUNT_NAME,
          IS_FIRST_LOGIN
          FROM PROVIDER WHERE PROVIDER_ID = :0
@@ -64,12 +63,14 @@ export enum Region {
 
 type CarriedOverPowerGenAmountRequestDto = {
   regionId: Region;
+  plantId: number;
 };
 
 providerRouter.get('/carried-over-power-gen-amount', async (req, res) => {
   // @ts-ignore
   const { providerId } = req.decoded;
-  const { regionId } = req.query as CarriedOverPowerGenAmountRequestDto;
+  const { regionId, plantId } =
+    req.query as unknown as CarriedOverPowerGenAmountRequestDto;
 
   if (!regionId) {
     return res.json({
@@ -82,38 +83,56 @@ providerRouter.get('/carried-over-power-gen-amount', async (req, res) => {
   try {
     const selfCarriedOverPowerGenAmountResult = await connection.execute(
       `
-        SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE PROVIDER_ID = :0
+        SELECT CARRIED_OVER_POWER_GEN_AMOUNT 
+          FROM PROVIDER_PLANT_CARRIED_AMOUNT 
+          WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
       `,
-      [providerId],
+      [providerId, plantId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     const nationCarriedOverPowerGenAmountResult = await connection.execute(
       `
-        SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE ACCOUNT_TYPE = 'nation'
+        SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT 
+          FROM PROVIDER_PLANT_CARRIED_AMOUNT ppca
+          INNER JOIN PROVIDER p ON p.PROVIDER_ID = ppca.PROVIDER_ID
+          WHERE p.ACCOUNT_TYPE = 'nation'
       `,
       [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+
+    const localGovernmentProvider = await connection.execute(
+      `
+        SELECT PROVIDER_ID
+          FROM PROVIDER
+          WHERE REGION_ID = :0 AND ACCOUNT_TYPE = 'localGovernment'
+      `,
+      [regionId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
     const localGovernmentCarriedOverPowerGenAmountResult =
       await connection.execute(
         `
-      SELECT CARRIED_OVER_POWER_GEN_AMOUNT FROM PROVIDER WHERE REGION_ID = :0
+        SELECT CARRIED_OVER_POWER_GEN_AMOUNT 
+          FROM PROVIDER_PLANT_CARRIED_AMOUNT 
+          WHERE PROVIDER_ID = :0 AND PLANT_ID = :1
       `,
-        [regionId],
+        [(localGovernmentProvider.rows as any[])[0].PROVIDER_ID, plantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
 
     const selfCarriedOverPowerGenAmount =
       convertToCamelCase(selfCarriedOverPowerGenAmountResult?.rows as any[])[0]
-        .carriedOverPowerGenAmount ?? 0;
+        ?.carriedOverPowerGenAmount ?? 0;
     const nationCarriedOverPowerGenAmount =
       convertToCamelCase(
         nationCarriedOverPowerGenAmountResult?.rows as any[]
-      )[0].carriedOverPowerGenAmount ?? 0;
+      )[0]?.carriedOverPowerGenAmount ?? 0;
     const localGovernmentCarriedOverPowerGenAmount =
       convertToCamelCase(
         localGovernmentCarriedOverPowerGenAmountResult?.rows as any[]
-      )[0].carriedOverPowerGenAmount ?? 0;
+      )[0]?.carriedOverPowerGenAmount ?? 0;
 
     res.json({
       success: true,
