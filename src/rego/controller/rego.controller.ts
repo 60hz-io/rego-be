@@ -372,20 +372,20 @@ regoRouter.post('/issue', async (req, res) => {
           SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID 
             FROM PROVIDER_PLANT_CARRIED_AMOUNT ppca
             INNER JOIN PROVIDER p ON ppca.PROVIDER_ID = p.PROVIDER_ID
-            WHERE p.ACCOUNT_TYPE = 'nation' 
+            WHERE p.ACCOUNT_TYPE = 'nation' AND ppca.PLANT_ID = :0 
             FOR UPDATE
         `,
-        [],
+        [plantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       ),
       connection.execute(
         `
         SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT, p.PROVIDER_ID FROM PROVIDER p
           INNER JOIN PROVIDER_PLANT_CARRIED_AMOUNT ppca ON p.PROVIDER_ID = ppca.PROVIDER_ID
-          WHERE REGION_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment'
+          WHERE REGION_ID = :0 AND p.ACCOUNT_TYPE = 'localGovernment' AND ppca.PLANT_ID = :1
           FOR UPDATE
       `,
-        [camelPlantResult.regionId],
+        [camelPlantResult.regionId, plantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       ),
     ]);
