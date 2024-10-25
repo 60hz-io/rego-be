@@ -642,7 +642,6 @@ regoRouter.post('/issue', async (req, res) => {
           [소유주_소수점_총합, decoded?.providerId, plantId]
         );
       } else {
-        console.log(645);
         await connection.execute(
           `INSERT INTO PROVIDER_PLANT_CARRIED_AMOUNT(PROVIDER_ID, PLANT_ID, CARRIED_OVER_POWER_GEN_AMOUNT) 
             VALUES(:0, :1, :2)
@@ -651,7 +650,6 @@ regoRouter.post('/issue', async (req, res) => {
         );
       }
     }
-    console.log(660);
     if (Number(국가_소수점_총합) >= 0) {
       const nationResult = await connection.execute(
         `

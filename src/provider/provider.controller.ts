@@ -95,9 +95,9 @@ providerRouter.get('/carried-over-power-gen-amount', async (req, res) => {
         SELECT ppca.CARRIED_OVER_POWER_GEN_AMOUNT 
           FROM PROVIDER_PLANT_CARRIED_AMOUNT ppca
           INNER JOIN PROVIDER p ON p.PROVIDER_ID = ppca.PROVIDER_ID
-          WHERE p.ACCOUNT_TYPE = 'nation'
+          WHERE p.ACCOUNT_TYPE = 'nation' AND ppca.PLANT_ID = :0
       `,
-      [],
+      [plantId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
