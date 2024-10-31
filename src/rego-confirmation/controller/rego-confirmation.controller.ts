@@ -13,6 +13,7 @@ type RegoConfirmationIssueRequestDto = {
     regoGroupId: number;
     buyingRegoId: number;
     regoUsageAmount: number;
+    electricityProductionPeriod: string;
   }[];
   usageRecognitionPeriodStart: string;
   usageRecognitionPeriodEnd: string;
@@ -164,9 +165,20 @@ regoConfirmationRouter.post("/issue", async (req, res) => {
 
   const connection = await getConnection();
 
+  let minElectricityProductionPeriod = Infinity;
+
   try {
     for await (const selectedRego of selectedRegos) {
-      const { buyingRegoId, regoUsageAmount } = selectedRego;
+      const { buyingRegoId, regoUsageAmount, electricityProductionPeriod } =
+        selectedRego;
+
+      const numberElectricityProductionPeriod = Number(
+        electricityProductionPeriod.split("-").join("")
+      );
+
+      if (minElectricityProductionPeriod > numberElectricityProductionPeriod) {
+        minElectricityProductionPeriod = numberElectricityProductionPeriod;
+      }
 
       const buyingRegoResult = await connection.execute(
         `
@@ -203,6 +215,18 @@ regoConfirmationRouter.post("/issue", async (req, res) => {
       }
     }
 
+    function convertElectricityProductionPeriodToCorrectFormat(value: number) {
+      const str = value.toString();
+      const year = str.slice(0, 4);
+      const month = str.slice(4, 6);
+
+      return `${year}-${month}`;
+    }
+
+    const minElectricityProductionPeriodToNumber =
+      convertElectricityProductionPeriodToCorrectFormat(
+        minElectricityProductionPeriod
+      );
     const regoUsageAmount = selectedRegos.reduce(
       (acc, cur) => acc + cur.regoUsageAmount,
       0
@@ -213,8 +237,8 @@ regoConfirmationRouter.post("/issue", async (req, res) => {
       `
         INSERT INTO REGO_CONFIRMATION(CONSUMER_ID, 
                                       REGO_USAGE_AMOUNT, POWER_USAGE_AMOUNT,
-                                      USAGE_RECOGNITION_PERIOD_START, USAGE_RECOGNITION_PERIOD_END)
-                    VALUES(:consumerId, :regoUsageAmount, :powerUsageAMount, :usageRecognitionPeriodStart, :usageRecognitionPeriodEnd)
+                                      USAGE_RECOGNITION_PERIOD_START, USAGE_RECOGNITION_PERIOD_END, ELECTRICITY_PRODUCTION_PERIOD)
+                    VALUES(:consumerId, :regoUsageAmount, :powerUsageAMount, :usageRecognitionPeriodStart, :usageRecognitionPeriodEnd, :electricityProductionPeriod)
                     RETURNING REGO_CONFIRMATION_ID INTO :id
       `,
       {
@@ -224,6 +248,7 @@ regoConfirmationRouter.post("/issue", async (req, res) => {
         usageRecognitionPeriodStart: new Date(usageRecognitionPeriodStart),
         usageRecognitionPeriodEnd: new Date(usageRecognitionPeriodEnd),
         id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
+        electricityProductionPeriod: minElectricityProductionPeriodToNumber,
       },
       { autoCommit: true }
     );
