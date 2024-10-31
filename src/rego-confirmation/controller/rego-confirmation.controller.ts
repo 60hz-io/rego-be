@@ -214,15 +214,15 @@ regoConfirmationRouter.post("/issue", async (req, res) => {
         INSERT INTO REGO_CONFIRMATION(CONSUMER_ID, 
                                       REGO_USAGE_AMOUNT, POWER_USAGE_AMOUNT,
                                       USAGE_RECOGNITION_PERIOD_START, USAGE_RECOGNITION_PERIOD_END)
-                    VALUES(:consumerId, :regoUsageAmount, :powerUsageAMount, :usageRecognitionPeriod)
+                    VALUES(:consumerId, :regoUsageAmount, :powerUsageAMount, :usageRecognitionPeriodStart, :usageRecognitionPeriodEnd)
                     RETURNING REGO_CONFIRMATION_ID INTO :id
       `,
       {
         consumerId,
         regoUsageAmount,
         powerUsageAmount,
-        usageRecognitionPeriodStart,
-        usageRecognitionPeriodEnd,
+        usageRecognitionPeriodStart: new Date(usageRecognitionPeriodStart),
+        usageRecognitionPeriodEnd: new Date(usageRecognitionPeriodEnd),
         id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
       },
       { autoCommit: true }
