@@ -1,10 +1,10 @@
-import express from 'express';
-import oracledb from 'oracledb';
+import express from "express";
+import oracledb from "oracledb";
 
-import { getConnection } from '../../app-data-source';
-import { RegoStatus } from '../../rego/controller/rego.controller';
-import { convertToCamelCase } from '../../utils/convertToCamelCase';
-import dayjs from 'dayjs';
+import { getConnection } from "../../app-data-source";
+import { RegoStatus } from "../../rego/controller/rego.controller";
+import { convertToCamelCase } from "../../utils/convertToCamelCase";
+import dayjs from "dayjs";
 
 export const regoConfirmationRouter = express.Router();
 
@@ -14,10 +14,11 @@ type RegoConfirmationIssueRequestDto = {
     buyingRegoId: number;
     regoUsageAmount: number;
   }[];
-  usageRecognitionPeriod: string;
+  usageRecognitionPeriodStart: string;
+  usageRecognitionPeriodEnd: string;
 };
 
-regoConfirmationRouter.get('/', async (req, res) => {
+regoConfirmationRouter.get("/", async (req, res) => {
   const connection = await getConnection();
 
   try {
@@ -81,7 +82,7 @@ LEFT JOIN
   }
 });
 
-regoConfirmationRouter.get('/me', async (req, res) => {
+regoConfirmationRouter.get("/me", async (req, res) => {
   const connection = await getConnection();
   // @ts-expect-error
   const { consumerId } = req.decoded;
@@ -152,11 +153,14 @@ WHERE rc.CONSUMER_ID = :0
   }
 });
 
-regoConfirmationRouter.post('/issue', async (req, res) => {
+regoConfirmationRouter.post("/issue", async (req, res) => {
   //@ts-ignore
   const { consumerId } = req.decoded;
-  const { selectedRegos, usageRecognitionPeriod } =
-    req.body as RegoConfirmationIssueRequestDto;
+  const {
+    selectedRegos,
+    usageRecognitionPeriodStart,
+    usageRecognitionPeriodEnd,
+  } = req.body as RegoConfirmationIssueRequestDto;
 
   const connection = await getConnection();
 
@@ -209,7 +213,7 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
       `
         INSERT INTO REGO_CONFIRMATION(CONSUMER_ID, 
                                       REGO_USAGE_AMOUNT, POWER_USAGE_AMOUNT,
-                                      USAGE_RECOGNITION_PERIOD)
+                                      USAGE_RECOGNITION_PERIOD_START, USAGE_RECOGNITION_PERIOD_END)
                     VALUES(:consumerId, :regoUsageAmount, :powerUsageAMount, :usageRecognitionPeriod)
                     RETURNING REGO_CONFIRMATION_ID INTO :id
       `,
@@ -217,18 +221,19 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
         consumerId,
         regoUsageAmount,
         powerUsageAmount,
-        usageRecognitionPeriod,
+        usageRecognitionPeriodStart,
+        usageRecognitionPeriodEnd,
         id: { dir: oracledb.BIND_OUT, type: oracledb.NUMBER },
       },
       { autoCommit: true }
     );
 
-    const REGO_CONFIRMATION_UNIQUE_NUMBER = '05';
+    const REGO_CONFIRMATION_UNIQUE_NUMBER = "05";
     const id = (confirmationResult.outBinds as any).id?.[0];
-    const now = dayjs().format('YYYY-MM');
+    const now = dayjs().format("YYYY-MM");
     const confirmationNumber = `P-${now}-${REGO_CONFIRMATION_UNIQUE_NUMBER}-${String(
       id
-    ).padStart(4, '0')}`;
+    ).padStart(4, "0")}`;
 
     await connection.execute(
       `
@@ -330,7 +335,7 @@ regoConfirmationRouter.post('/issue', async (req, res) => {
 
     res.json({
       success: true,
-      message: 'REGO에 대해 사용확인서를 발급했습니다.',
+      message: "REGO에 대해 사용확인서를 발급했습니다.",
       data: {
         amount: regoUsageAmount,
       },
