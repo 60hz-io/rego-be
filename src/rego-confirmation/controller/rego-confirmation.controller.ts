@@ -102,10 +102,7 @@ SELECT DISTINCT
     c.account_name,
     c.workplace_address,
     c.representative_name,
-    (SELECT MAX(pg.ELECTRICITY_PRODUCTION_PERIOD)
-     FROM POWER_GENERATION pg
-     WHERE pg.PLANT_ID = p.PLANT_ID) AS ELECTRICITY_PRODUCTION_PERIOD, -- 가장 최신 발전 기간만 가져옴
-     rg.ELECTRICITY_PRODUCTION_PERIOD AS EPR,
+     rc.ELECTRICITY_PRODUCTION_PERIOD AS ELECTRICITY_PRODUCTION_PERIOD,
     p.plant_name,
     p.location,
     p.PLANT_CODE,
